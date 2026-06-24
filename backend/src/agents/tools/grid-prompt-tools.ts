@@ -12,7 +12,34 @@ import { z } from 'zod'
 import { db, schema } from '../../db/index.js'
 import { eq } from 'drizzle-orm'
 
-export function createGridPromptTools(episodeId: number, dramaId: number) {
+// 视觉风格 value -> prompt 关键词映射
+const STYLE_PROMPT_MAP: Record<string, string> = {
+  realistic: 'realistic photography, photorealistic',
+  cinematic: 'cinematic, film still, movie scene',
+  anime: 'anime illustration, anime art style',
+  ghibli: 'ghibli style, studio ghibli, miyazaki',
+  comic: 'comic book style, graphic novel art',
+  watercolor: 'watercolor painting, watercolor illustration',
+  cyberpunk: 'cyberpunk, neon-lit futuristic, dystopian',
+  xianxia: 'xianxia, chinese fantasy art, cultivation',
+  'ink-wash': 'chinese ink wash painting, traditional ink',
+  'oil-painting': 'oil painting, classical art, rich texture',
+  pixel: 'pixel art, 8-bit, retro game',
+  steampunk: 'steampunk, victorian sci-fi, brass gears',
+  gothic: 'gothic, dark fantasy, ornate architecture',
+  dark: 'dark fantasy, moody atmosphere, dramatic shadows',
+  minimalist: 'minimalist, clean design, simple composition',
+  'j-fresh': 'japanese fresh style, soft pastel, light airy',
+  '3d-render': '3D render, CGI, digital art, octane render',
+  claymation: 'claymation, clay art, stop motion style',
+}
+
+function getStylePrompt(value: string | undefined): string {
+  if (!value) return 'cinematic, film still, movie scene'
+  return STYLE_PROMPT_MAP[value] || value
+}
+
+export function createGridPromptTools(episodeId: number, dramaId: number, dramaStyle?: string) {
 
   // ─── 角色提示词 ───────────────────────────────────────
 
@@ -55,7 +82,7 @@ export function createGridPromptTools(episodeId: number, dramaId: number) {
       if (c.personality) parts.push(`personality: ${c.personality}`)
 
       const base = parts.join(', ')
-      const prompt = `${base}, cinematic portrait, high quality, consistent art style, no text, no watermark`
+      const prompt = `${base}, ${getStylePrompt(dramaStyle)}, portrait, high quality, consistent art style, no text, no watermark`
 
       return {
         character_id: c.id,
@@ -103,7 +130,7 @@ export function createGridPromptTools(episodeId: number, dramaId: number) {
       if (s.prompt) parts.push(s.prompt)
 
       const base = parts.join(', ')
-      const prompt = `${base}, cinematic scene, atmospheric lighting, high quality, consistent art style, no text, no watermark`
+      const prompt = `${base}, ${getStylePrompt(dramaStyle)}, scene, atmospheric lighting, high quality, consistent art style, no text, no watermark`
 
       return {
         scene_id: s.id,

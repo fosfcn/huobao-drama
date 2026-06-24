@@ -7,7 +7,7 @@ import { Agent } from '@mastra/core/agent'
 import { createOpenAI } from '@ai-sdk/openai'
 import { eq, isNull, and } from 'drizzle-orm'
 import { db, schema } from '../db/index.js'
-import { getTextConfig, getTextProviderBaseUrl } from '../services/ai.js'
+import { getTextConfig, getTextProviderBaseUrl, getAllActiveConfigs, isRetryableError, createModelFromConfig } from '../services/ai.js'
 import { logTaskProgress } from '../utils/task-logger.js'
 import { createScriptTools } from './tools/script-tools.js'
 import { createExtractTools } from './tools/extract-tools.js'
@@ -176,28 +176,31 @@ function getAgentConfig(agentType: string) {
   return rows.find(r => r.isActive) || rows[0] || null
 }
 
-function getModel(dbConfig: any) {
-  const textConfig = getTextConfig()
-  const resolvedBaseURL = getTextProviderBaseUrl(textConfig)
+/** 根据指定 AIConfig 创建 model（用于 fallback 切换） */
+function getModelFromConfig(textConfig: any, dbConfig: any) {
+  const model = createModelFromConfig(textConfig)
+  const modelName = dbConfig?.model || textConfig.model
   logTaskProgress('AIConfig', 'text-model-endpoint', {
     provider: textConfig.provider,
-    baseUrl: resolvedBaseURL,
-    model: dbConfig?.model || textConfig.model,
+    baseUrl: getTextProviderBaseUrl(textConfig),
+    model: modelName,
+    configId: textConfig._configId || 'unknown',
   })
-  const provider = createOpenAI({
-    baseURL: resolvedBaseURL,
-    apiKey: textConfig.apiKey,
-  } as any)
-  const modelName = dbConfig?.model || textConfig.model
-  return provider.chat(modelName)
+  // 如果 dbConfig 有自定义 model，覆盖
+  if (dbConfig?.model && dbConfig.model !== textConfig.model) {
+    const resolvedBaseURL = getTextProviderBaseUrl(textConfig)
+    const provider = createOpenAI({ baseURL: resolvedBaseURL, apiKey: textConfig.apiKey } as any)
+    return provider.chat(dbConfig.model)
+  }
+  return model
 }
 
-export function createAgent(type: string, episodeId: number, dramaId: number): Agent | null {
+export function createAgent(type: string, episodeId: number, dramaId: number, textConfig?: any): Agent | null {
   const defaults = DEFAULT_PROMPTS[type]
   if (!defaults) return null
 
   const dbConfig = getAgentConfig(type)
-  const model = getModel(dbConfig)
+  const model = getModelFromConfig(textConfig || getTextConfig(), dbConfig)
   const baseInstructions = dbConfig?.systemPrompt?.trim() || defaults.instructions
   const skillInstructions = loadAgentSkills(type)
   const instructions = skillInstructions
@@ -205,15 +208,96 @@ export function createAgent(type: string, episodeId: number, dramaId: number): A
     : baseInstructions
   const name = dbConfig?.name || defaults.name
 
+  // 获取 drama 视觉风格
+  const [dramaForStyle] = db.select().from(schema.dramas).where(eq(schema.dramas.id, dramaId)).all()
+  const dramaStyle = dramaForStyle?.style || ''
+
   let tools: Record<string, any> = {}
   switch (type) {
     case 'script_rewriter': tools = createScriptTools(episodeId); break
     case 'extractor': tools = createExtractTools(episodeId, dramaId); break
     case 'storyboard_breaker': tools = createStoryboardTools(episodeId, dramaId); break
     case 'voice_assigner': tools = createVoiceTools(episodeId, dramaId); break
-    case 'grid_prompt_generator': tools = createGridPromptTools(episodeId, dramaId); break
+    case 'grid_prompt_generator': tools = createGridPromptTools(episodeId, dramaId, dramaStyle); break
     default: return null
   }
 
   return new Agent({ id: type, name, instructions, model, tools })
+}
+
+/**
+ * 带 fallback 的 Agent 执行
+ * 主配置失败后自动切换到下一个优先级的配置重试
+ * 仅对可重试错误（429/500/超时）做 fallback，客户端错误直接抛出
+ */
+export async function runAgentWithFallback(
+  type: string,
+  episodeId: number,
+  dramaId: number,
+  messages: any[],
+  options: { maxSteps?: number } = {},
+): Promise<any> {
+  const configs = getAllActiveConfigs('text')
+  if (!configs.length) throw new Error('No active text AI config')
+
+  const lastError: Error[] = []
+
+  for (let i = 0; i < configs.length; i++) {
+    const config = configs[i]
+    // 给 config 附加 _configId 用于日志追踪
+    const configWithId = { ...config, _configId: i + 1 }
+
+    try {
+      const agent = createAgent(type, episodeId, dramaId, configWithId)
+      if (!agent) throw new Error('Agent not found')
+
+      logTaskProgress('Agent', 'fallback-attempt', {
+        agentType: type,
+        configIndex: i + 1,
+        totalConfigs: configs.length,
+        provider: config.provider,
+        model: config.model,
+      })
+
+      const result = await agent.generate(messages, { maxSteps: options.maxSteps || 20 })
+
+      // 成功则返回
+      if (i > 0) {
+        logTaskProgress('Agent', 'fallback-success', {
+          agentType: type,
+          succeededConfigIndex: i + 1,
+          provider: config.provider,
+          model: config.model,
+        })
+      }
+      return result
+
+    } catch (err: any) {
+      lastError.push(err)
+
+      const retryable = isRetryableError(err)
+      logTaskProgress('Agent', 'fallback-error', {
+        agentType: type,
+        configIndex: i + 1,
+        provider: config.provider,
+        model: config.model,
+        errorMessage: err.message?.substring(0, 200),
+        isRetryable: retryable,
+        willFallback: retryable && i < configs.length - 1,
+      })
+
+      // 不可重试的错误直接抛出，不浪费其他配置
+      if (!retryable) {
+        throw err
+      }
+
+      // 还有下一个配置，继续尝试
+      if (i < configs.length - 1) {
+        continue
+      }
+    }
+  }
+
+  // 所有配置都失败了
+  throw lastError[lastError.length - 1]
 }

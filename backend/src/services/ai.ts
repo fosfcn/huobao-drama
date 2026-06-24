@@ -5,6 +5,7 @@ import { db, schema } from '../db/index.js'
 import { eq } from 'drizzle-orm'
 import { logTaskProgress, logTaskWarn } from '../utils/task-logger.js'
 import { joinProviderUrl } from './adapters/url.js'
+import { createOpenAI } from '@ai-sdk/openai'
 
 export type ServiceType = 'text' | 'image' | 'video' | 'audio'
 
@@ -102,4 +103,57 @@ export function getConfigById(id: number): AIConfig | null {
     apiKey: row.apiKey,
     model: models[0] || '',
   }
+}
+
+
+/** 获取某个服务类型的所有活跃配置，按优先级降序排列 */
+export function getAllActiveConfigs(serviceType: ServiceType): AIConfig[] {
+  const rows = db.select().from(schema.aiServiceConfigs)
+    .where(eq(schema.aiServiceConfigs.serviceType, serviceType))
+    .all()
+    .filter(r => r.isActive)
+    .sort((a, b) => (b.priority || 0) - (a.priority || 0))
+
+  return rows.map(row => {
+    const models = row.model ? JSON.parse(row.model) : []
+    return {
+      provider: row.provider || '',
+      baseUrl: row.baseUrl,
+      apiKey: row.apiKey,
+      model: models[0] || '',
+    }
+  })
+}
+
+/** 判断错误是否可重试（限流、服务端错误、网络超时等） */
+export function isRetryableError(err: any): boolean {
+  if (!err) return false
+
+  // AI SDK 的 APICallError 带 statusCode
+  const statusCode = err.statusCode || err.status || err.code
+  if (typeof statusCode === 'number') {
+    return statusCode === 429 || statusCode >= 500
+  }
+
+  // OpenRouter 429 限流
+  const msg = (err.message || '').toLowerCase()
+  if (msg.includes('rate-limit') || msg.includes('rate_limited') || msg.includes('429')) return true
+  if (msg.includes('provider returned error')) return true
+  if (msg.includes('timeout') || msg.includes('timed out') || msg.includes('econnreset')) return true
+  if (msg.includes('500') || msg.includes('502') || msg.includes('503') || msg.includes('504')) return true
+
+  // AI_APICallError 标记
+  if (err.isRetryable === true) return true
+
+  return false
+}
+
+/** 根据 AIConfig 创建 OpenAI provider 和 model */
+export function createModelFromConfig(config: AIConfig) {
+  const resolvedBaseURL = getTextProviderBaseUrl(config)
+  const provider = createOpenAI({
+    baseURL: resolvedBaseURL,
+    apiKey: config.apiKey,
+  } as any)
+  return provider.chat(config.model)
 }

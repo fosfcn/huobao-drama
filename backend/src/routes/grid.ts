@@ -4,9 +4,36 @@ import { db, schema } from '../db/index.js'
 import { success, badRequest, now } from '../utils/response.js'
 import { generateImage } from '../services/image-generation.js'
 import { splitGridImage } from '../services/grid-split.js'
-import { createAgent } from '../agents/index.js'
+import { runAgentWithFallback } from '../agents/index.js'
 import { logTaskError, logTaskPayload, logTaskProgress } from '../utils/task-logger.js'
 
+
+// 视觉风格 value -> prompt 关键词映射
+const STYLE_PROMPT_MAP: Record<string, string> = {
+  realistic: 'realistic photography, photorealistic',
+  cinematic: 'cinematic, film still, movie scene',
+  anime: 'anime illustration, anime art style',
+  ghibli: 'ghibli style, studio ghibli, miyazaki',
+  comic: 'comic book style, graphic novel art',
+  watercolor: 'watercolor painting, watercolor illustration',
+  cyberpunk: 'cyberpunk, neon-lit futuristic, dystopian',
+  xianxia: 'xianxia, chinese fantasy art, cultivation',
+  'ink-wash': 'chinese ink wash painting, traditional ink',
+  'oil-painting': 'oil painting, classical art, rich texture',
+  pixel: 'pixel art, 8-bit, retro game',
+  steampunk: 'steampunk, victorian sci-fi, brass gears',
+  gothic: 'gothic, dark fantasy, ornate architecture',
+  dark: 'dark fantasy, moody atmosphere, dramatic shadows',
+  minimalist: 'minimalist, clean design, simple composition',
+  'j-fresh': 'japanese fresh style, soft pastel, light airy',
+  '3d-render': '3D render, CGI, digital art, octane render',
+  claymation: 'claymation, clay art, stop motion style',
+}
+
+function getStylePrompt(value: string | undefined): string {
+  if (!value) return 'cinematic, film still, movie scene'
+  return STYLE_PROMPT_MAP[value] || value
+}
 const app = new Hono()
 
 const POSITIONS = [
@@ -141,7 +168,7 @@ function buildGridPrompt(
   dramaStyle: string,
   referenceAssets: Array<{ path: string; label: string; kind: string; imageLabel: string }>,
 ): string {
-  const style = dramaStyle || 'cinematic'
+  const style = getStylePrompt(dramaStyle)
   const storyboardCharacterIds = getStoryboardCharacterIds(storyboards.map((sb) => sb.id))
   const legend = buildReferenceLegend(referenceAssets)
 
@@ -353,10 +380,10 @@ async function tryAgentGridPrompt(
   mode: string,
   referenceLegend: string,
 ) {
-  const agent = createAgent('grid_prompt_generator', episodeId, dramaId)
-  if (!agent) return null
-
-  const result = await agent.generate(
+  const result = await runAgentWithFallback(
+    'grid_prompt_generator',
+    episodeId,
+    dramaId,
     [{
       role: 'user',
       content: [

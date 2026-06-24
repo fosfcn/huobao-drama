@@ -12,7 +12,7 @@
         <div class="head-info">
           <h1 class="page-title">{{ drama.title }}</h1>
           <div class="page-meta">
-            <span v-if="drama.style" class="style-chip">{{ drama.style }}</span>
+            <span v-if="drama.style" class="style-chip">{{ getStyleLabel(drama.style) }}</span>
             <span v-if="drama.style" class="meta-divider"></span>
             <span class="meta-item">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
@@ -151,6 +151,7 @@
 
 <script setup>
 import { toast } from 'vue-sonner'
+import { getStyleLabel } from '~/constants/visual-styles'
 import { aiConfigAPI, dramaAPI, episodeAPI } from '~/composables/useApi'
 
 const route = useRoute()
