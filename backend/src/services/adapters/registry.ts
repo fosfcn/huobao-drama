@@ -6,9 +6,11 @@ import { MiniMaxImageAdapter } from './minimax-image'
 import { MiniMaxVideoAdapter } from './minimax-video'
 import { MiniMaxTTSAdapter } from './minimax-tts'
 import { OpenAIImageAdapter } from './openai-image'
+import { OpenAITTSAdapter } from './openai-tts'
 import { GeminiImageAdapter } from './gemini-image'
 import { VolcEngineImageAdapter } from './volcengine-image'
 import { VolcEngineVideoAdapter } from './volcengine-video'
+import { AgnesVideoAdapter } from './agnes-video'
 import { ViduVideoAdapter } from './vidu-video'
 import { AliImageAdapter } from './ali-image'
 import { AliVideoAdapter } from './ali-video'
@@ -31,12 +33,15 @@ export const videoAdapters: Record<string, VideoProviderAdapter> = {
   volcengine: new VolcEngineVideoAdapter(),
   vidu: new ViduVideoAdapter(),
   ali: new AliVideoAdapter(),
-  // Chatfire 视频 - 待确认 API 格式
+  // Agnes AI 视频 (agnes-video-v2.0 / Seedance)
+  agnes: new AgnesVideoAdapter(),
 }
 
 // TTS Adapter 注册表
 export const ttsAdapters: Record<string, TTSProviderAdapter> = {
   minimax: new MiniMaxTTSAdapter(),
+  // OpenAI 兼容 TTS (Edge TTS 等，二进制响应)
+  openai: new OpenAITTSAdapter(),
 }
 
 export function getTTSAdapter(provider: string): TTSProviderAdapter {

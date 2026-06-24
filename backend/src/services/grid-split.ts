@@ -1,10 +1,22 @@
-import sharp from 'sharp'
 import fs from 'fs'
 import path from 'path'
 import { now } from '../utils/response.js'
 import { getAbsolutePath } from '../utils/storage.js'
 
 const DATA_DIR = getAbsolutePath('grid-cells')
+
+// Lazy-load sharp (optional dependency)
+let _sharp: any = null
+async function getSharp() {
+  if (_sharp === null) {
+    try {
+      _sharp = (await import('sharp')).default
+    } catch {
+      throw new Error('sharp module is not available on this system. Image splitting is disabled.')
+    }
+  }
+  return _sharp
+}
 
 interface SplitResult {
   index: number
@@ -16,6 +28,7 @@ export async function splitGridImage(
   rows: number,
   cols: number,
 ): Promise<SplitResult[]> {
+  const sharp = await getSharp()
   const absPath = imagePath.startsWith('/')
     ? imagePath
     : getAbsolutePath(imagePath)

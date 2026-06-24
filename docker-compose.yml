@@ -1,6 +1,7 @@
 services:
   huobao-drama:
     build: .
+    container_name: huobao-drama
     ports:
       - "5679:5679"
     volumes:
@@ -9,4 +10,7 @@ services:
     environment:
       - NODE_ENV=production
       - PORT=5679
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     restart: unless-stopped
+

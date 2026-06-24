@@ -4,11 +4,24 @@
 import fs from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
-import sharp from 'sharp'
 import { v4 as uuid } from 'uuid'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const STORAGE_ROOT = process.env.STORAGE_PATH || path.resolve(__dirname, '../../../data/static')
+
+// Lazy-load sharp (optional dependency)
+let _sharp: any = undefined
+async function getSharp() {
+  if (_sharp === undefined) {
+    try {
+      _sharp = (await import('sharp')).default
+    } catch {
+      _sharp = null
+    }
+  }
+  if (_sharp === null) throw new Error('sharp module is not available on this system.')
+  return _sharp
+}
 
 /**
  * 下载远程文件到本地存储
@@ -105,18 +118,24 @@ export async function readImageAsCompressedDataUrl(
   const maxHeight = options.maxHeight ?? 768
   const quality = options.quality ?? 68
 
-  const resized = sharp(filePath).rotate().resize({
-    width: maxWidth,
-    height: maxHeight,
-    fit: 'inside',
-    withoutEnlargement: true,
-  })
-  const metadata = await resized.metadata()
-  const output = metadata.hasAlpha
-    ? await resized.flatten({ background: '#ffffff' }).jpeg({ quality, mozjpeg: true }).toBuffer()
-    : await resized.jpeg({ quality, mozjpeg: true }).toBuffer()
-  const mimeType = 'image/jpeg'
-  return `data:${mimeType};base64,${output.toString('base64')}`
+  try {
+    const sharp = await getSharp()
+    const resized = sharp(filePath).rotate().resize({
+      width: maxWidth,
+      height: maxHeight,
+      fit: 'inside',
+      withoutEnlargement: true,
+    })
+    const metadata = await resized.metadata()
+    const output = metadata.hasAlpha
+      ? await resized.flatten({ background: '#ffffff' }).jpeg({ quality, mozjpeg: true }).toBuffer()
+      : await resized.jpeg({ quality, mozjpeg: true }).toBuffer()
+    const mimeType = 'image/jpeg'
+    return `data:${mimeType};base64,${output.toString('base64')}`
+  } catch {
+    // Fallback: return original image as data URL without compression
+    return readImageAsDataUrl(relativePath)
+  }
 }
 
 export function parseDataUrl(dataUrl: string): { mimeType: string; data: string } | null {

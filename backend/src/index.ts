@@ -4,6 +4,7 @@ import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import path from 'path'
 import { fileURLToPath } from 'url'
+import { readFileSync, existsSync } from 'fs'
 
 import dramas from './routes/dramas.js'
 import episodes from './routes/episodes.js'
@@ -27,6 +28,21 @@ import { requestLogger, errorHandler } from './middleware/logger.js'
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const projectRoot = path.resolve(__dirname, '../..')
 
+// Read version info at startup
+let appVersion = '1.0.0'
+let buildHash = 'dev'
+try {
+  const pkg = JSON.parse(readFileSync(path.join(projectRoot, 'backend', 'package.json'), 'utf-8'))
+  appVersion = pkg.version || '1.0.0'
+} catch {}
+try {
+  // Try to read BUILD_HASH injected during docker build
+  const hashFile = path.join(projectRoot, 'BUILD_HASH')
+  if (existsSync(hashFile)) {
+    buildHash = readFileSync(hashFile, 'utf-8').trim().slice(0, 7)
+  }
+} catch {}
+
 const app = new Hono()
 
 // Middleware
@@ -37,8 +53,13 @@ app.use('*', cors({
 app.use('*', requestLogger)
 app.use('*', errorHandler)
 
-// Health check
-app.get('/api/v1/health', (c) => c.json({ status: 'ok', timestamp: new Date().toISOString() }))
+// Health check with version
+app.get('/api/v1/health', (c) => c.json({
+  status: 'ok',
+  timestamp: new Date().toISOString(),
+  version: appVersion,
+  buildHash,
+}))
 
 // API routes
 const api = new Hono()

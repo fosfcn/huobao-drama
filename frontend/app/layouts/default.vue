@@ -33,6 +33,12 @@
       </nav>
 
       <div class="header-right">
+        <span v-if="appVersion" class="version-badge" :title="'Build: ' + (buildHash || 'unknown')">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 12a9 9 0 0 1-9 9m9-9a9 9 0 0 0-9-9m9 9H3m9 9a9 9 0 0 1-9-9m9 9c1.66 0 3-4.03 3-9s-1.34-9-3-9m0 18c-1.66 0-3-4.03-3-9s1.34-9 3-9m-9 9a9 9 0 0 1 9-9"/>
+          </svg>
+          v{{ appVersion }}
+        </span>
         <div class="film-strip">
           <span class="film-frame"></span>
           <span class="film-frame"></span>
@@ -52,6 +58,19 @@ import brandLogo from '~/assets/huobao-logo.png'
 
 const route = useRoute()
 const showBrandImage = ref(true)
+const appVersion = ref('')
+const buildHash = ref('')
+
+onMounted(async () => {
+  try {
+    const resp = await fetch('/api/v1/health')
+    if (resp.ok) {
+      const data = await resp.json()
+      appVersion.value = data.version || ''
+      buildHash.value = data.buildHash || ''
+    }
+  } catch {}
+})
 </script>
 
 <style scoped>
@@ -134,7 +153,31 @@ const showBrandImage = ref(true)
   font-weight: 600;
 }
 
-.header-right { display: flex; align-items: center; margin-left: auto; }
+.header-right { display: flex; align-items: center; margin-left: auto; gap: 10px; }
+
+/* Version badge */
+.version-badge {
+  display: flex; align-items: center; gap: 5px;
+  padding: 4px 10px;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-3);
+  letter-spacing: 0.02em;
+  cursor: default;
+  user-select: none;
+  transition: all 0.18s var(--ease-out);
+}
+.version-badge:hover {
+  color: var(--text-2);
+  border-color: var(--border-strong);
+}
+.version-badge svg {
+  opacity: 0.5;
+  flex-shrink: 0;
+}
 
 /* Film strip decoration */
 .film-strip {

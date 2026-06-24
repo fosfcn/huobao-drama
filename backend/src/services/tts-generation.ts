@@ -1,6 +1,6 @@
 /**
  * TTS 语音合成服务
- * 支持 MiniMax TTS (hex 音频响应) 和 OpenAI 兼容 /audio/speech
+ * 支持 MiniMax TTS (hex 音频响应) 和 OpenAI 兼容 /audio/speech (二进制响应)
  */
 import fs from 'fs'
 import path from 'path'
@@ -72,27 +72,54 @@ export async function generateTTS(params: TTSParams): Promise<string> {
     throw new Error(`TTS API error ${resp.status}: ${errText}`)
   }
 
-  const result = await resp.json()
-  const parsed = adapter.parseResponse(result)
-
-  // 将 hex 解码为二进制
-  const buffer = Buffer.from(parsed.audioHex, 'hex')
+  // 检查是否为二进制响应适配器 (OpenAI /v1/audio/speech)
+  const isBinary = typeof (adapter as any).isBinaryResponse === 'function' && (adapter as any).isBinaryResponse()
 
   // 保存到本地
   const audioDir = path.join(STORAGE_ROOT, 'audio')
   fs.mkdirSync(audioDir, { recursive: true })
-  const filename = `${uuid()}.${parsed.format || 'mp3'}`
+
+  let buffer: Buffer
+  let format = 'mp3'
+
+  if (isBinary) {
+    // OpenAI 兼容 TTS 返回二进制音频数据
+    const arrayBuffer = await resp.arrayBuffer()
+    buffer = Buffer.from(arrayBuffer)
+
+    // 从 Content-Type 推断格式
+    const contentType = resp.headers.get('content-type') || ''
+    if (contentType.includes('wav')) format = 'wav'
+    else if (contentType.includes('ogg')) format = 'ogg'
+    else if (contentType.includes('webm')) format = 'webm'
+
+    logTaskSuccess('AudioTask', 'tts-saved-binary', {
+      provider: config.provider,
+      voice: params.voice,
+      format,
+      bytes: buffer.length,
+    })
+  } else {
+    // MiniMax TTS 返回 JSON hex 音频数据
+    const result = await resp.json()
+    const parsed = adapter.parseResponse(result)
+    buffer = Buffer.from(parsed.audioHex, 'hex')
+    format = parsed.format || 'mp3'
+
+    logTaskSuccess('AudioTask', 'tts-saved-hex', {
+      provider: config.provider,
+      voice: params.voice,
+      format,
+      bytes: buffer.length,
+      audioMs: parsed.audioLength,
+    })
+  }
+
+  const filename = `${uuid()}.${format}`
   const filePath = path.join(audioDir, filename)
   fs.writeFileSync(filePath, buffer)
 
   const relativePath = `static/audio/${filename}`
-  logTaskSuccess('AudioTask', 'tts-saved', {
-    provider: config.provider,
-    voice: params.voice,
-    path: relativePath,
-    bytes: buffer.length,
-    audioMs: parsed.audioLength,
-  })
   return relativePath
 }
 
