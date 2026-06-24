@@ -1,6 +1,9 @@
 services:
   huobao-drama:
-    build: .
+    build:
+      context: .
+      args:
+        BUILD_HASH: ""
     container_name: huobao-drama
     ports:
       - "5679:5679"
@@ -13,4 +16,3 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     restart: unless-stopped
-
