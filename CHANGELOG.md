@@ -19,3 +19,4 @@
 - AI 服务组合: OpenRouter (文本主) / Agnes AI (文本备+图片+视频) / Edge TTS (音频)
 - docker-compose.yml: extra_hosts 和容器名配置
 - tts-generation.ts: 支持二进制 TTS 音频响应
+
