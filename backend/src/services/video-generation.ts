@@ -2,10 +2,13 @@ import { db, schema } from '../db/index.js'
 import { eq } from 'drizzle-orm'
 import { getActiveConfig, getConfigById } from './ai.js'
 import { now } from '../utils/response.js'
-import { downloadFile, readImageAsCompressedDataUrl } from '../utils/storage.js'
+import { downloadFile, readImageAsCompressedDataUrl, saveBase64Image, parseDataUrl, getAbsolutePath } from '../utils/storage.js'
 import { getVideoAdapter } from './adapters/registry'
 import type { AIConfig } from './adapters/types'
 import { logTaskError, logTaskPayload, logTaskProgress, logTaskStart, logTaskSuccess, logTaskWarn, redactUrl } from '../utils/task-logger.js'
+
+// Public URL base for converting local paths to HTTP URLs (needed for Agnes Video API)
+const STORAGE_BASE_URL = process.env.STORAGE_BASE_URL || 'https://aidj.hc-mart.com/static'
 
 interface GenerateVideoParams {
   storyboardId?: number
@@ -164,20 +167,38 @@ async function processVideoGeneration(id: number, config: AIConfig) {
 async function normalizeVideoReferenceUrl(value: string | null | undefined): Promise<string | null> {
   const raw = String(value || '').trim()
   if (!raw) return null
-  if (raw.startsWith('data:image/')) return raw
-  if (raw.startsWith('static/') || raw.startsWith('/static/')) {
-    const localPath = raw.startsWith('/static/') ? raw.slice(1) : raw
+
+  // Data URI: save to local file, then convert to HTTP URL
+  if (raw.startsWith('data:image/')) {
     try {
-      return await readImageAsCompressedDataUrl(localPath, {
-        maxWidth: 768,
-        maxHeight: 768,
-        quality: 68,
-      })
+      const parsed = parseDataUrl(raw)
+      if (!parsed) return null
+      const localPath = await saveBase64Image(parsed.data, parsed.mimeType, 'video-refs')
+      return `${STORAGE_BASE_URL}/${localPath.replace('static/', '')}`
     } catch (err) {
-      logTaskWarn('VideoTask', 'reference-read-failed', { path: localPath, error: (err as Error).message })
+      logTaskWarn('VideoTask', 'data-uri-save-failed', { error: (err as Error).message })
       return null
     }
   }
+
+  // Local path: convert to public HTTP URL
+  if (raw.startsWith('static/') || raw.startsWith('/static/')) {
+    const relPath = raw.startsWith('/static/') ? raw.slice(1) : raw
+    // Verify file exists
+    try {
+      const absPath = getAbsolutePath(relPath)
+      const fs = await import('fs')
+      if (!fs.existsSync(absPath)) {
+        logTaskWarn('VideoTask', 'reference-not-found', { path: relPath })
+        return null
+      }
+    } catch (err) {
+      logTaskWarn('VideoTask', 'reference-check-failed', { path: relPath, error: (err as Error).message })
+    }
+    return `${STORAGE_BASE_URL}/${relPath.replace('static/', '')}`
+  }
+
+  // Already an HTTP URL
   return raw
 }
 

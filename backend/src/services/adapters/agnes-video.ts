@@ -84,9 +84,13 @@ export class AgnesVideoAdapter implements VideoProviderAdapter {
   }
 
   buildPollRequest(config: AIConfig, taskId: string): ProviderRequest {
+    const baseUrl = (config.baseUrl || '').replace(/\/+$/, '')
+
     if (taskId.startsWith('video_')) {
+      // Build URL manually to avoid URL constructor encoding ? and = in query string
+      const pollUrl = `${baseUrl}/agnesapi?video_id=${taskId}&model_name=agnes-video-v2.0`
       return {
-        url: joinProviderUrl(config.baseUrl, '', '/agnesapi?video_id=' + taskId + '&model_name=agnes-video-v2.0'),
+        url: pollUrl,
         method: 'GET',
         headers: {
           'Authorization': `Bearer ${config.apiKey}`,
