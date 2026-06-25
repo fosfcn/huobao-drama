@@ -154,6 +154,7 @@ app.put('/:id', async (c) => {
 // POST /storyboards/:id/generate-tts
 app.post('/:id/generate-tts', async (c) => {
   const id = Number(c.req.param('id'))
+  const body = await c.req.json().catch(() => ({}))
   const [sb] = db.select().from(schema.storyboards).where(eq(schema.storyboards.id, id)).all()
   if (!sb) return badRequest(c, '镜头不存在')
   const parsedDialogue = parseDialogueForTTS(sb.dialogue)
@@ -188,9 +189,20 @@ app.post('/:id/generate-tts', async (c) => {
 
   const [ep] = db.select().from(schema.episodes).where(eq(schema.episodes.id, sb.episodeId)).all()
   try {
-    const audioPath = await generateTTS({ text: pureDialogue, voice: voiceId, configId: ep?.audioConfigId || null })
+    // Speed: request body > storyboard ttsSpeed > character voiceSpeed > default 1.0
+  let speed: number | undefined = body.speed ?? sb.ttsSpeed ?? undefined
+  if (speed === undefined && speaker && !/^(旁白|画外音|narrator)$/i.test(speaker)) {
+    const [epForChar] = db.select().from(schema.episodes).where(eq(schema.episodes.id, sb.episodeId)).all()
+    if (epForChar) {
+      const chars = db.select().from(schema.characters).where(eq(schema.characters.dramaId, epForChar.dramaId)).all()
+      const found = chars.find((char) => char.name === speaker)
+      if (found?.voiceSpeed) speed = found.voiceSpeed
+    }
+  }
+  if (speed === undefined || speed === null) speed = 1.0
+  const audioPath = await generateTTS({ text: pureDialogue, voice: voiceId, configId: ep?.audioConfigId || null, speed })
   db.update(schema.storyboards)
-    .set({ ttsAudioUrl: audioPath, updatedAt: now() })
+    .set({ ttsAudioUrl: audioPath, ttsSpeed: speed, updatedAt: now() })
     .where(eq(schema.storyboards.id, id))
     .run()
 
@@ -200,7 +212,7 @@ app.post('/:id/generate-tts', async (c) => {
       path: audioPath,
       textLength: pureDialogue.length,
     })
-    return success(c, { tts_audio_url: audioPath, voice_id: voiceId, text: pureDialogue })
+    return success(c, { tts_audio_url: audioPath, voice_id: voiceId, speed, text: pureDialogue })
   } catch (err: any) {
     logTaskError('StoryboardAPI', 'generate-tts', { storyboardId: id, voiceId, error: err.message })
     return badRequest(c, err.message)
@@ -215,6 +227,79 @@ app.delete('/:id', async (c) => {
   db.delete(schema.storyboards).where(eq(schema.storyboards.id, id)).run()
   logTaskSuccess('StoryboardAPI', 'delete', { storyboardId: id })
   return success(c)
+})
+
+// POST /storyboards/:id/select-frame  选择主图
+app.post('/:id/select-frame', async (c) => {
+  const id = Number(c.req.param('id'))
+  const body = await c.req.json().catch(() => ({}))
+  const frameType = body.frame_type || 'first_frame'
+  const imageUrl = body.image_url
+  let selectedIndex = body.selected_index ?? -1
+
+  const [sb] = db.select().from(schema.storyboards).where(eq(schema.storyboards.id, id)).all()
+  if (!sb) return badRequest(c, 'Storyboard not found')
+
+  const candidates = sb.candidateImages ? JSON.parse(sb.candidateImages) : []
+
+  // Support selecting by image_url in addition to selected_index
+  if (imageUrl && selectedIndex < 0) {
+    selectedIndex = candidates.indexOf(imageUrl)
+    if (selectedIndex < 0 && imageUrl.startsWith('/')) {
+      selectedIndex = candidates.indexOf(imageUrl.slice(1))
+    }
+  }
+
+  if (selectedIndex >= 0 && selectedIndex < candidates.length) {
+    const selectedPath = candidates[selectedIndex]
+    const update: Record<string, any> = { updatedAt: now(), selectedImageIndex: selectedIndex }
+    if (frameType === 'first_frame') update.firstFrameImage = selectedPath
+    else if (frameType === 'last_frame') update.lastFrameImage = selectedPath
+    db.update(schema.storyboards).set(update).where(eq(schema.storyboards.id, id)).run()
+
+    // Delete unselected candidates (except the selected one)
+    const unselected = candidates.filter((_, i) => i !== selectedIndex)
+    for (const path of unselected) {
+      try {
+        const fs = await import('fs')
+        const p = path.startsWith('/') ? path.slice(1) : path
+        if (fs.existsSync(p)) fs.unlinkSync(p)
+      } catch {}
+    }
+
+    // Clear candidates after selection
+    db.update(schema.storyboards)
+      .set({ candidateImages: JSON.stringify([selectedPath]) })
+      .where(eq(schema.storyboards.id, id))
+      .run()
+
+    return success(c, { frame_type: frameType, selected_index: selectedIndex, image_url: selectedPath })
+  }
+  return badRequest(c, 'Invalid selection')
+})
+
+// POST /storyboards/:id/clear-frame-variants  清除候选图
+app.post('/:id/clear-frame-variants', async (c) => {
+  const id = Number(c.req.param('id'))
+  const [sb] = db.select().from(schema.storyboards).where(eq(schema.storyboards.id, id)).all()
+  if (!sb) return badRequest(c, 'Storyboard not found')
+
+  const candidates = sb.candidateImages ? JSON.parse(sb.candidateImages) : []
+  // Delete all candidate images
+  for (const path of candidates) {
+    try {
+      const fs = await import('fs')
+      const p = path.startsWith('/') ? path.slice(1) : path
+      if (fs.existsSync(p)) fs.unlinkSync(p)
+    } catch {}
+  }
+
+  db.update(schema.storyboards)
+    .set({ candidateImages: null, updatedAt: now() })
+    .where(eq(schema.storyboards.id, id))
+    .run()
+
+  return success(c, { cleared: candidates.length })
 })
 
 export default app

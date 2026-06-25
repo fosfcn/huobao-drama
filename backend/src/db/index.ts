@@ -116,6 +116,7 @@ sqlite.exec(`
     reference_images TEXT,
     video_url TEXT,
     tts_audio_url TEXT,
+    tts_speed REAL DEFAULT 1.0,
     subtitle_url TEXT,
     composed_video_url TEXT,
     status TEXT DEFAULT 'pending',

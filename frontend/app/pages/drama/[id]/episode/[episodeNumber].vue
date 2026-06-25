@@ -776,17 +776,36 @@
                     @click.stop="openImageViewer('/' + (c.image_url || c.imageUrl), `${c.name} 角色形象`)"
                   />
                   <div v-else class="asset-cover-empty">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                    <svg v-if="!isPendingCharImage(c.id)" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                    <div v-else class="char-img-spinner">
+                      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v4m0 12v4M4.93 4.93l2.83 2.83m8.48 8.48l2.83 2.83M2 12h4m12 0h4M4.93 19.07l2.83-2.83m8.48-8.48l2.83-2.83" stroke-linecap="round"><animateTransform attributeName="transform" type="rotate" from="0 12 12" to="360 12 12" dur="1s" repeatCount="indefinite"/></path></svg>
+                      <div class="char-img-progress">{{ getCharImageProgress(c.id) }}</div>
+                    </div>
                   </div>
                   <span class="asset-cover-badge" :class="(c.image_url || c.imageUrl) ? 'is-ready' : (isPendingCharImage(c.id) ? 'is-pending' : '')">{{ (c.image_url || c.imageUrl) ? '已生成' : (isPendingCharImage(c.id) ? '生成中' : '待生成') }}</span>
                 </div>
                 <div class="asset-body">
                   <div class="asset-name">{{ c.name }}</div>
                   <div class="asset-meta dim">{{ c.role || '角色' }}</div>
+                  <div class="char-appearance">
+                    <textarea
+                      v-if="editingCharAppearance === c.id"
+                      v-model="charAppearanceDraft[c.id]"
+                      class="char-appearance-input"
+                      rows="2"
+                      placeholder="描述角色外貌特征（如发型、服装、年龄等），用于生成一致的形象..."
+                      @blur="saveCharAppearance(c)"
+                      @keydown.enter.prevent="saveCharAppearance(c)"
+                    />
+                    <div v-else class="char-appearance-text" @click="editCharAppearance(c)">
+                      <span v-if="c.appearance || c.description" class="dim">{{ c.appearance || c.description }}</span>
+                      <span v-else class="dim" style="font-style:italic;opacity:0.5">点击添加外貌描述...</span>
+                    </div>
+                  </div>
                 </div>
                 <div class="asset-foot">
                   <span :class="['dot', (c.image_url || c.imageUrl) && 'ok', isPendingCharImage(c.id) && 'pending']" />
-                  <span class="dim" style="font-size:10px">{{ (c.image_url || c.imageUrl) ? '已生成' : (isPendingCharImage(c.id) ? '生成中' : '待生成') }}</span>
+                  <span class="dim" style="font-size:10px">{{ (c.image_url || c.imageUrl) ? '已生成' : (isPendingCharImage(c.id) ? getCharImageProgress(c.id) : '待生成') }}</span>
                   <button class="btn btn-sm ml-auto" :disabled="isPendingCharImage(c.id)" @click="genCharImg(c.id)">{{ isPendingCharImage(c.id) ? '生成中' : '生成' }}</button>
                 </div>
               </div>
@@ -872,6 +891,11 @@
                   <span class="dim">{{ sb.location || '未设地点' }}</span>
                 </div>
                 <div class="dub-foot">
+                  <div class="dub-speed-row">
+                    <span class="dim" style="font-size:11px;white-space:nowrap">语速</span>
+                    <input type="range" min="0.5" max="2.0" step="0.1" :value="sb.tts_speed || sb.ttsSpeed || 1.0" @change="updateSbSpeed(sb, $event.target.value)" style="flex:1;min-width:60px" />
+                    <span class="speed-value">{{ (sb.tts_speed || sb.ttsSpeed || 1.0) }}x</span>
+                  </div>
                   <audio v-if="hasTTS(sb)" :src="'/' + getTTSUrl(sb)" controls preload="none" class="dub-audio" />
                   <div v-else class="dim" style="font-size:12px">尚未生成语音文件</div>
                   <button class="btn btn-sm ml-auto" @click="genShotTTS(sb)">生成配音</button>
@@ -991,7 +1015,25 @@
                           <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
                         </span>
                       </div>
-                      <span class="frame-thumb-label">{{ isPendingShotFrame(sb.id, 'first_frame') ? '首帧生成中' : '首帧' }}</span>
+                       <span class="frame-thumb-label">{{ isPendingShotFrame(sb.id, 'first_frame') ? '首帧生成中' : '首帧' }}</span>
+                       <button
+                         class="frame-regen-btn"
+                         :disabled="isPendingShotFrame(sb.id, 'first_frame')"
+                         @click.stop="genShotFrame(sb, 'first_frame')"
+                       >
+                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+                         {{ isPendingShotFrame(sb.id, 'first_frame') ? '生成中…' : '重新生成' }}
+                       </button>
+                       <!-- 候选图列表 -->
+                       <div v-if="getCandidateImages(sb, 'first_frame').length" class="frame-candidates">
+                        <div v-for="(cImg, ci) in getCandidateImages(sb, 'first_frame')" :key="ci"
+                          class="frame-candidate" :title="'选择此图'" @click.stop="selectCandidateFrame(sb, 'first_frame', cImg)">
+                          <img :src="'/' + cImg" />
+                          <span class="frame-candidate-check">
+                            <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg>
+                          </span>
+                        </div>
+                      </div>
                     </div>
                     <div v-if="frameMode === 'first_last'" class="frame-thumb-wrap">
                       <div class="frame-thumb" @click.stop="!isPendingShotFrame(sb.id, 'last_frame') && genShotFrame(sb, 'last_frame')">
@@ -1009,7 +1051,25 @@
                           <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
                         </span>
                       </div>
-                      <span class="frame-thumb-label">{{ isPendingShotFrame(sb.id, 'last_frame') ? '尾帧生成中' : '尾帧' }}</span>
+                       <span class="frame-thumb-label">{{ isPendingShotFrame(sb.id, 'last_frame') ? '尾帧生成中' : '尾帧' }}</span>
+                       <button
+                         class="frame-regen-btn"
+                         :disabled="isPendingShotFrame(sb.id, 'last_frame')"
+                         @click.stop="genShotFrame(sb, 'last_frame')"
+                       >
+                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+                         {{ isPendingShotFrame(sb.id, 'last_frame') ? '生成中…' : '重新生成' }}
+                       </button>
+                       <!-- 候选图列表 -->
+                      <div v-if="getCandidateImages(sb, 'last_frame').length" class="frame-candidates">
+                        <div v-for="(cImg, ci) in getCandidateImages(sb, 'last_frame')" :key="ci"
+                          class="frame-candidate" :title="'选择此图'" @click.stop="selectCandidateFrame(sb, 'last_frame', cImg)">
+                          <img :src="'/' + cImg" />
+                          <span class="frame-candidate-check">
+                            <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg>
+                          </span>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -1249,10 +1309,28 @@
                   <div v-if="videoFailMessage(sb.id)" class="prod-error">{{ videoFailMessage(sb.id) }}</div>
                 </div>
                 <div class="prod-actions">
-                  <button class="btn btn-sm" :disabled="isPendingVideo(sb.id)" @click="genVid(sb)">
-                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
-                    {{ isPendingVideo(sb.id) ? '生成中' : '生成视频' }}
-                  </button>
+                  <template v-if="isPendingVideo(sb.id)">
+                    <div class="video-progress-bar">
+                      <div class="video-progress-fill" :style="{ width: (videoProgress[sb.id]?.percent || 0) + '%' }"></div>
+                      <span class="video-progress-text">{{ videoProgress[sb.id]?.percent || 0 }}%</span>
+                    </div>
+                  </template>
+                  <template v-else-if="!hasVid(sb)">
+                    <button class="btn btn-sm" @click="genVid(sb)">
+                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
+                      生成视频
+                    </button>
+                  </template>
+                  <template v-else>
+                    <button class="btn btn-sm btn-danger" @click="deleteVideo(sb)">
+                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                      删除视频
+                    </button>
+                    <button class="btn btn-sm" @click="genVid(sb)">
+                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
+                      重新生成
+                    </button>
+                  </template>
                 </div>
               </div>
             </div>
@@ -1451,7 +1529,7 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { toast } from 'vue-sonner'
 import {
   Users, MapPin, Video, ImageIcon, Layers, Mic2, FileText, FolderKanban, Clapperboard, Download,
@@ -1495,13 +1573,6 @@ const fallbackVoiceProfiles = [
   { id: 'zh-CN-YunyangNeural', label: '云扬', gender: '男声', traits: '稳重、磁性、专业', suitable: '成熟男性、新闻播报、专业角色' },
   { id: 'zh-CN-XiaobeiNeural', label: '晓北', gender: '女声', traits: '东北方言、活泼、接地气', suitable: '喜剧角色、接地气人物' },
   { id: 'zh-CN-XiaoniNeural', label: '晓妮', gender: '女声', traits: '陕西方言、淳朴、亲切', suitable: '乡土角色、朴实人物' },
-  { id: 'zh-CN-YunxuanNeural', label: '云轩', gender: '男声', traits: '磁性、深沉、成熟', suitable: '中年男性、权威角色、领导者' },
-  { id: 'zh-CN-XiaomengNeural', label: '晓梦', gender: '女声', traits: '温柔、梦幻、轻柔', suitable: '少女、温柔角色、情感戏' },
-  { id: 'zh-CN-XiaoyanNeural', label: '晓颜', gender: '女声', traits: '自然、清新、日常', suitable: '日常对话、邻家女孩' },
-  { id: 'zh-CN-XiaochenNeural', label: '晓晨', gender: '男声', traits: '自然、阳光、温暖', suitable: '日常对话、暖男角色' },
-  { id: 'zh-CN-XiaojieNeural', label: '晓洁', gender: '女声', traits: '甜美、可爱、活泼', suitable: '萝莉、可爱角色、活泼少女' },
-  { id: 'zh-CN-XiaoyuNeural', label: '晓雨', gender: '女声', traits: '活泼、俏皮、轻快', suitable: '活泼女孩、调皮角色' },
-  { id: 'zh-CN-XiaoshuangNeural', label: '晓双', gender: '女声', traits: '幽默、风趣、搞笑', suitable: '喜剧角色、搞笑担当' },
   { id: 'en-US-JennyNeural', label: 'Jenny(英)', gender: '女声', traits: '英文女声、标准美音', suitable: '英文内容、外语角色' },
   { id: 'en-US-GuyNeural', label: 'Guy(英)', gender: '男声', traits: '英文男声、标准美音', suitable: '英文内容、外语角色' },
   { id: 'en-GB-SoniaNeural', label: 'Sonia(英)', gender: '女声', traits: '英文女声、英式口音', suitable: '英文内容、英式角色' },
@@ -1525,12 +1596,17 @@ const imageConfigs = ref([])
 const videoConfigs = ref([])
 const audioConfigs = ref([])
 const pendingCharImageIds = ref([])
+const charImageProgress = ref({})
+const charImageGenIds = ref({})
+const editingCharAppearance = ref(null)
+const charAppearanceDraft = ref({})
 const pendingSceneImageIds = ref([])
 const pendingShotFrameKeys = ref([])
 const pendingVideoIds = ref([])
 const pendingComposeIds = ref([])
 const failedVideoMessages = ref({})
 const failedComposeMessages = ref({})
+const videoProgress = ref({})
 const imageViewer = ref({ open: false, src: '', title: '' })
 
 function configLabel(config) {
@@ -1542,6 +1618,26 @@ function configLabel(config) {
 
 function isPendingCharImage(id) {
   return pendingCharImageIds.value.includes(id)
+}
+function getCharImageProgress(id) {
+  return charImageProgress.value[id] || '生成中...'
+}
+function editCharAppearance(c) {
+  editingCharAppearance.value = c.id
+  charAppearanceDraft.value[c.id] = c.appearance || c.description || ''
+}
+async function saveCharAppearance(c) {
+  const draft = charAppearanceDraft.value[c.id]
+  if (draft !== undefined && draft !== (c.appearance || '')) {
+    try {
+      await characterAPI.update(c.id, { appearance: draft })
+      c.appearance = draft
+      toast.success('人物说明已保存')
+    } catch (e) {
+      toast.error('保存失败: ' + e.message)
+    }
+  }
+  editingCharAppearance.value = null
 }
 
 function openImageViewer(src, title = '') {
@@ -2363,6 +2459,15 @@ function updateCharSpeed(charId, speed) {
     c.voiceSpeed = speedValue
   }
 }
+function updateSbSpeed(sb, speed) {
+  const speedValue = parseFloat(speed)
+  storyboardAPI.update(sb.id, { tts_speed: speedValue })
+  const target = sbs.value.find(s => s.id === sb.id)
+  if (target) {
+    target.tts_speed = speedValue
+    target.ttsSpeed = speedValue
+  }
+}
 function getVoiceProfile(voiceId) {
   return voiceProfiles.value.find(v => v.id === voiceId) || null
 }
@@ -2452,7 +2557,7 @@ async function refresh() {
       episode.value = ep
       try { chars.value = await episodeAPI.characters(ep.id) } catch { chars.value = [] }
       try { scenes.value = await episodeAPI.scenes(ep.id) } catch { scenes.value = [] }
-      sbs.value = await episodeAPI.storyboards(ep.id)
+      try { sbs.value = await episodeAPI.storyboards(ep.id) } catch { sbs.value = [] }
       if (sbs.value.length && !selectedSb.value) selectedSb.value = sbs.value[0]
 
       const epHasContent = !!(episode.value?.content)
@@ -2526,19 +2631,65 @@ function watchAsyncResult(check, attempts = 24, delay = 2500) {
 async function genCharImg(id) {
   try {
     if (!isPendingCharImage(id)) pendingCharImageIds.value.push(id)
-    await characterAPI.generateImage(id, epId.value)
-    toast.success('角色图片生成中')
-    await refresh()
-    watchAsyncResult(() => {
-      const char = chars.value.find(c => c.id === id)
-      const done = !!(char?.image_url || char?.imageUrl)
-      if (done) pendingCharImageIds.value = pendingCharImageIds.value.filter(item => item !== id)
-      return done
-    })
+    charImageProgress.value[id] = '排队中...'
+    const res = await characterAPI.generateImage(id, epId.value)
+    const genId = res?.image_generation_id || res?.data?.image_generation_id
+    if (genId) {
+      charImageGenIds.value[id] = genId
+      charImageProgress.value[id] = '生成中...'
+      pollCharImageStatus(id, genId)
+    } else {
+      toast.success('角色图片生成中')
+      await refresh()
+      watchAsyncResult(() => {
+        const char = chars.value.find(c => c.id === id)
+        const done = !!(char?.image_url || char?.imageUrl)
+        if (done) {
+          pendingCharImageIds.value = pendingCharImageIds.value.filter(item => item !== id)
+          delete charImageProgress.value[id]
+        }
+        return done
+      })
+    }
   } catch (e) {
     pendingCharImageIds.value = pendingCharImageIds.value.filter(item => item !== id)
+    delete charImageProgress.value[id]
+    delete charImageGenIds.value[id]
     toast.error(e.message)
   }
+}
+async function pollCharImageStatus(charId: number, genId: number) {
+  const maxAttempts = 120
+  for (let i = 0; i < maxAttempts; i++) {
+    await new Promise(r => setTimeout(r, 3000))
+    try {
+      const res = await imageAPI.get(genId)
+      const status = res?.status || res?.data?.status
+      const error = res?.error_msg || res?.data?.error_msg
+      if (status === 'completed') {
+        charImageProgress.value[charId] = '已完成'
+        pendingCharImageIds.value = pendingCharImageIds.value.filter(item => item !== charId)
+        delete charImageGenIds.value[charId]
+        await refresh()
+        toast.success('角色图片生成完成')
+        return
+      }
+      if (status === 'failed') {
+        charImageProgress.value[charId] = '失败'
+        pendingCharImageIds.value = pendingCharImageIds.value.filter(item => item !== charId)
+        delete charImageGenIds.value[charId]
+        toast.error('角色图片生成失败: ' + (error || '未知错误'))
+        return
+      }
+      charImageProgress.value[charId] = '生成中 (' + (i + 1) + '/' + maxAttempts + ')...'
+    } catch (e) {
+      // ignore polling errors, continue
+    }
+  }
+  charImageProgress.value[charId] = '超时'
+  pendingCharImageIds.value = pendingCharImageIds.value.filter(item => item !== charId)
+  delete charImageGenIds.value[charId]
+  toast.error('角色图片生成超时')
 }
 function batchCharImages() {
   const ids = visualChars.value.filter(c => !(c.image_url || c.imageUrl)).map(c => c.id)
@@ -2623,7 +2774,8 @@ function getDialogueSpeaker(sb) {
 }
 async function genShotTTS(sb) {
   try {
-    await storyboardAPI.generateTTS(sb.id)
+    const speed = sb.tts_speed || sb.ttsSpeed || 1.0
+    await storyboardAPI.generateTTS(sb.id, speed)
     toast.success(`镜头 #${sb.storyboard_number || sb.storyboardNumber || sb.id} 配音已生成`)
     await refresh()
   } catch (e) { toast.error(e.message) }
@@ -2634,7 +2786,7 @@ async function batchShotTTS() {
     toast.info(ttsEligibleCount.value ? '所有镜头配音已生成' : '当前没有可生成的对白或旁白')
     return
   }
-  const results = await Promise.allSettled(pending.map(sb => storyboardAPI.generateTTS(sb.id)))
+  const results = await Promise.allSettled(pending.map(sb => storyboardAPI.generateTTS(sb.id, sb.tts_speed || sb.ttsSpeed || 1.0)))
   const okCount = results.filter(r => r.status === 'fulfilled').length
   const failCount = results.length - okCount
   if (okCount) toast.success(`已生成 ${okCount} 条镜头配音`)
@@ -2683,6 +2835,10 @@ function buildShotImagePrompt(sb, frameType) {
   const location = sb.location || getSceneName(sb)
   const time = sb.time || ''
   const charactersText = getStoryboardCharacterNames(sb).join('、')
+  const charAppearances = getStoryboardCharacterIds(sb).map(charId => {
+    const char = chars.value.find(item => item.id === charId)
+    return char ? `${char.name}：${char.appearance || char.description || ''}` : ''
+  }).filter(Boolean).join('；')
   const action = sb.action || ''
   const atmosphere = sb.atmosphere || ''
   const frameHint = frameType === 'first_frame'
@@ -2696,12 +2852,34 @@ function buildShotImagePrompt(sb, frameType) {
     angle ? `机位：${angle}` : '',
     movement ? `运镜：${movement}` : '',
     charactersText ? `角色：${charactersText}` : '',
+    charAppearances ? `角色外貌：${charAppearances}` : '',
     location ? `地点：${location}` : '',
     time ? `时间：${time}` : '',
     action ? `动作：${action}` : '',
     atmosphere ? `氛围：${atmosphere}` : '',
     frameHint,
   ].filter(Boolean).join('；')
+}
+
+function getCandidateImages(sb, frameType) {
+  const raw = sb?.candidate_images || sb?.candidateImages
+  if (!raw) return []
+  try {
+    const list = typeof raw === 'string' ? JSON.parse(raw) : raw
+    if (!Array.isArray(list)) return []
+    const currentMain = frameType === 'first_frame' ? getFirstFrame(sb) : getLastFrame(sb)
+    return list.filter(img => img !== currentMain)
+  } catch { return [] }
+}
+
+async function selectCandidateFrame(sb, frameType, imageUrl) {
+  try {
+    await storyboardAPI.selectFrame(sb.id, { image_url: imageUrl, frame_type: frameType })
+    toast.success('已选择该图')
+    await refresh()
+  } catch (e) {
+    toast.error(e.message || '选择失败')
+  }
 }
 
 async function genShotFrame(sb, frameType) {
@@ -2748,6 +2926,7 @@ async function genVid(sb) {
   try {
     delete failedVideoMessages.value[sb.id]
     if (!isPendingVideo(sb.id)) pendingVideoIds.value.push(sb.id)
+    videoProgress.value[sb.id] = { percent: 0, startTime: Date.now() }
     const generation = await videoAPI.generate(params)
     toast.success('视频生成中')
     await refresh()
@@ -2758,6 +2937,9 @@ async function genVid(sb) {
   }
 }
 async function pollVideoGeneration(generationId, storyboardId) {
+  let progressInterval = null
+  const storyboard = sbs.value.find(s => s.id === storyboardId)
+  const estimatedTotalMs = 20 * 60 * 1000  // Agnes Video V2.0 needs 10-30 min, estimate 20 min
   if (!generationId) {
     watchAsyncResult(() => {
       const target = sbs.value.find(s => s.id === storyboardId)
@@ -2767,18 +2949,27 @@ async function pollVideoGeneration(generationId, storyboardId) {
     }, 60, 4000)
     return
   }
-  for (let i = 0; i < 120; i++) {
-    await sleep(4000)
+  progressInterval = setInterval(() => {
+    const elapsed = Date.now() - (videoProgress.value[storyboardId]?.startTime || Date.now())
+    const pct = Math.min(95, Math.round((elapsed / estimatedTotalMs) * 100))
+    if (videoProgress.value[storyboardId]) videoProgress.value[storyboardId].percent = pct
+  }, 1500)
+  for (let i = 0; i < 180; i++) {
+    await sleep(10000)
     try {
       const res = await videoAPI.get(generationId)
       await refresh()
       if (res?.status === 'completed') {
+        clearInterval(progressInterval)
+        videoProgress.value[storyboardId] = { percent: 100 }
         pendingVideoIds.value = pendingVideoIds.value.filter(item => item !== storyboardId)
         delete failedVideoMessages.value[storyboardId]
         toast.success('视频生成完成')
         return
       }
       if (res?.status === 'failed') {
+        clearInterval(progressInterval)
+        delete videoProgress.value[storyboardId]
         pendingVideoIds.value = pendingVideoIds.value.filter(item => item !== storyboardId)
         failedVideoMessages.value = {
           ...failedVideoMessages.value,
@@ -2789,6 +2980,8 @@ async function pollVideoGeneration(generationId, storyboardId) {
       }
     } catch {}
   }
+  clearInterval(progressInterval)
+  delete videoProgress.value[storyboardId]
   pendingVideoIds.value = pendingVideoIds.value.filter(item => item !== storyboardId)
   failedVideoMessages.value = {
     ...failedVideoMessages.value,
@@ -2796,6 +2989,19 @@ async function pollVideoGeneration(generationId, storyboardId) {
   }
   toast.error('视频生成超时')
 }
+async function deleteVideo(sb) {
+  if (!confirm('确定要删除这个视频吗？删除后可以重新生成。')) return
+  try {
+    await storyboardAPI.update(sb.id, { video_url: null })
+    delete failedVideoMessages.value[sb.id]
+    delete videoProgress.value[sb.id]
+    toast.success('视频已删除')
+    await refresh()
+  } catch (e) {
+    toast.error(e.message || '删除失败')
+  }
+}
+
 async function doCompose(sb) {
   try {
     delete failedComposeMessages.value[sb.id]
@@ -3653,7 +3859,8 @@ onMounted(() => { refresh(); loadConfigs(); loadVoices() })
 .dub-title { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .dub-desc { font-size: 13px; line-height: 1.6; color: var(--text-1); }
 .dub-meta { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 11px; }
-.dub-foot { display: flex; align-items: center; gap: 10px; padding-top: 8px; border-top: 1px solid rgba(27, 41, 64, 0.08); }
+.dub-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding-top: 8px; border-top: 1px solid rgba(27, 41, 64, 0.08); }
+.dub-speed-row { display: flex; align-items: center; gap: 4px; width: 100%; }
 .dub-audio { flex: 1; min-width: 0; height: 30px; }
 
 /* Asset grid */
@@ -3745,6 +3952,32 @@ onMounted(() => { refresh(); loadConfigs(); loadVoices() })
   display: none; align-items: center; justify-content: center;
 }
 .frame-thumb:hover .frame-re { display: flex; }
+.frame-candidates {
+  display: flex; gap: 4px; flex-wrap: wrap; justify-content: center; margin-top: 2px;
+}
+.frame-regen-btn {
+  display: flex; align-items: center; gap: 4px; justify-content: center;
+  padding: 4px 8px; border-radius: 4px; border: 1px solid var(--border);
+  background: var(--bg-1); color: var(--text-2); font-size: 11px; font-weight: 500;
+  cursor: pointer; transition: all 0.15s; white-space: nowrap; margin-top: 2px;
+}
+.frame-regen-btn:hover:not(:disabled) {
+  border-color: var(--accent); color: var(--accent); background: rgba(33,88,255,0.06);
+}
+.frame-regen-btn:disabled {
+  opacity: 0.5; cursor: not-allowed;
+}
+.frame-candidate {
+  position: relative; width: 36px; height: 20px; border-radius: 3px; overflow: hidden;
+  cursor: pointer; border: 1.5px solid var(--border); transition: all 0.15s;
+}
+.frame-candidate:hover { border-color: var(--accent); }
+.frame-candidate img { width: 100%; height: 100%; object-fit: cover; }
+.frame-candidate-check {
+  position: absolute; inset: 0; display: none; align-items: center; justify-content: center;
+  background: rgba(0,0,0,0.45); color: #fff;
+}
+.frame-candidate:hover .frame-candidate-check { display: flex; }
 .frame-scroll { flex: 1; overflow-y: auto; padding: 10px 12px; }
 .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--bg-3); flex-shrink: 0; }
 .dot.ok { background: var(--success); }
@@ -3786,6 +4019,32 @@ onMounted(() => { refresh(); loadConfigs(); loadVoices() })
 }
 .prod-actions { display: flex; gap: 6px; padding: 8px 10px 10px; border-top: 1px solid rgba(27, 41, 64, 0.08); }
 .prod-actions .btn { flex: 1; justify-content: center; }
+
+/* Video progress bar */
+.video-progress-bar {
+  width: 100%;
+  height: 6px;
+  background: rgba(27, 41, 64, 0.06);
+  border-radius: 3px;
+  overflow: hidden;
+  position: relative;
+  margin-bottom: 6px;
+}
+.video-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent), #4a9eff);
+  border-radius: 3px;
+  transition: width 0.5s ease;
+}
+.video-progress-text {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 9px;
+  font-weight: 600;
+  color: var(--accent);
+}
 
 /* Image viewer */
 .image-viewer-overlay {
@@ -4343,5 +4602,56 @@ onMounted(() => { refresh(); loadConfigs(); loadVoices() })
   .latest-grid-strip-actions {
     justify-content: flex-start;
   }
+}
+
+.char-appearance { margin-top: 6px; }
+.char-appearance-text {
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: 4px;
+  border: 1px dashed transparent;
+  transition: border-color 0.2s;
+  min-height: 32px;
+  word-break: break-word;
+}
+.char-appearance-text:hover {
+  border-color: var(--primary);
+}
+.char-appearance-input {
+  width: 100%;
+  font-size: 11px;
+  line-height: 1.4;
+  padding: 4px 6px;
+  border: 1px solid var(--primary);
+  border-radius: 4px;
+  background: var(--card-bg);
+  color: var(--fg);
+  resize: none;
+  outline: none;
+}
+.char-appearance-input:focus {
+  box-shadow: 0 0 0 2px rgba(59,130,246,0.2);
+}
+.char-img-spinner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  color: var(--primary);
+}
+.char-img-spinner svg {
+  animation: spin 1s linear infinite;
+}
+.char-img-progress {
+  font-size: 10px;
+  color: var(--muted);
+}
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 </style>

@@ -55,7 +55,9 @@ export const episodeAPI = {
 export const storyboardAPI = {
   create: (data: any) => api.post('/storyboards', data),
   update: (id: number, data: any) => api.put(`/storyboards/${id}`, data),
-  generateTTS: (id: number) => api.post(`/storyboards/${id}/generate-tts`),
+  generateTTS: (id: number, speed?: number) => api.post(`/storyboards/${id}/generate-tts`, speed !== undefined ? { speed } : {}),
+  selectFrame: (id: number, data: { image_url: string; frame_type: string }) => api.post(`/storyboards/${id}/select-frame`, data),
+  clearFrameVariants: (id: number) => api.post(`/storyboards/${id}/clear-frame-variants`, {}),
   del: (id: number) => api.del(`/storyboards/${id}`),
 }
 
@@ -72,6 +74,7 @@ export const sceneAPI = {
 
 export const imageAPI = {
   generate: (d: any) => api.post('/images', d),
+  get: (id: number) => api.get('/images/' + id),
   list: (params?: { drama_id?: number; storyboard_id?: number }) => {
     const query = new URLSearchParams()
     if (params?.drama_id) query.set('drama_id', String(params.drama_id))

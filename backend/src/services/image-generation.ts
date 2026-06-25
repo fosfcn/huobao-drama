@@ -289,9 +289,41 @@ async function handleImageComplete(id: number, provider: string, imageUrl: strin
   // 更新关联表
   if (record?.storyboardId) {
     const sbUpdate: Record<string, any> = { updatedAt: now() }
-    if (record.frameType === 'first_frame') sbUpdate.firstFrameImage = localPath
-    else if (record.frameType === 'last_frame') sbUpdate.lastFrameImage = localPath
-    else sbUpdate.composedImage = localPath
+    if (record.frameType === 'first_frame') {
+      const [sb] = db.select().from(schema.storyboards).where(eq(schema.storyboards.id, record.storyboardId)).all()
+      if (sb) {
+        const candidates: string[] = sb.candidateImages ? JSON.parse(sb.candidateImages) : []
+        if (sb.firstFrameImage && !candidates.includes(sb.firstFrameImage)) {
+          candidates.push(sb.firstFrameImage)
+        }
+        if (localPath && !candidates.includes(localPath)) {
+          candidates.push(localPath)
+        }
+        const trimmed = candidates.slice(0, 20)
+        sbUpdate.candidateImages = JSON.stringify(trimmed)
+        sbUpdate.firstFrameImage = localPath
+        sbUpdate.selectedImageIndex = trimmed.indexOf(localPath) >= 0 ? trimmed.indexOf(localPath) : 0
+      } else {
+        sbUpdate.firstFrameImage = localPath
+      }
+    } else if (record.frameType === 'last_frame') {
+      const [sb] = db.select().from(schema.storyboards).where(eq(schema.storyboards.id, record.storyboardId)).all()
+      if (sb) {
+        const candidates: string[] = sb.candidateImages ? JSON.parse(sb.candidateImages) : []
+        if (sb.lastFrameImage && !candidates.includes(sb.lastFrameImage)) {
+          candidates.push(sb.lastFrameImage)
+        }
+        if (localPath && !candidates.includes(localPath)) {
+          candidates.push(localPath)
+        }
+        const trimmed = candidates.slice(0, 20)
+        sbUpdate.candidateImages = JSON.stringify(trimmed)
+        sbUpdate.lastFrameImage = localPath
+        sbUpdate.selectedImageIndex = trimmed.indexOf(localPath) >= 0 ? trimmed.indexOf(localPath) : 0
+      } else {
+        sbUpdate.lastFrameImage = localPath
+      }
+    } else sbUpdate.composedImage = localPath
     db.update(schema.storyboards).set(sbUpdate).where(eq(schema.storyboards.id, record.storyboardId)).run()
   }
   if (record?.characterId) {
@@ -316,9 +348,41 @@ async function handleImageCompleteBase64(id: number, provider: string, base64Dat
   // 更新关联表
   if (record?.storyboardId) {
     const sbUpdate: Record<string, any> = { updatedAt: now() }
-    if (record.frameType === 'first_frame') sbUpdate.firstFrameImage = localPath
-    else if (record.frameType === 'last_frame') sbUpdate.lastFrameImage = localPath
-    else sbUpdate.composedImage = localPath
+    if (record.frameType === 'first_frame') {
+      const [sb] = db.select().from(schema.storyboards).where(eq(schema.storyboards.id, record.storyboardId)).all()
+      if (sb) {
+        const candidates: string[] = sb.candidateImages ? JSON.parse(sb.candidateImages) : []
+        if (sb.firstFrameImage && !candidates.includes(sb.firstFrameImage)) {
+          candidates.push(sb.firstFrameImage)
+        }
+        if (localPath && !candidates.includes(localPath)) {
+          candidates.push(localPath)
+        }
+        const trimmed = candidates.slice(0, 20)
+        sbUpdate.candidateImages = JSON.stringify(trimmed)
+        sbUpdate.firstFrameImage = localPath
+        sbUpdate.selectedImageIndex = trimmed.indexOf(localPath) >= 0 ? trimmed.indexOf(localPath) : 0
+      } else {
+        sbUpdate.firstFrameImage = localPath
+      }
+    } else if (record.frameType === 'last_frame') {
+      const [sb] = db.select().from(schema.storyboards).where(eq(schema.storyboards.id, record.storyboardId)).all()
+      if (sb) {
+        const candidates: string[] = sb.candidateImages ? JSON.parse(sb.candidateImages) : []
+        if (sb.lastFrameImage && !candidates.includes(sb.lastFrameImage)) {
+          candidates.push(sb.lastFrameImage)
+        }
+        if (localPath && !candidates.includes(localPath)) {
+          candidates.push(localPath)
+        }
+        const trimmed = candidates.slice(0, 20)
+        sbUpdate.candidateImages = JSON.stringify(trimmed)
+        sbUpdate.lastFrameImage = localPath
+        sbUpdate.selectedImageIndex = trimmed.indexOf(localPath) >= 0 ? trimmed.indexOf(localPath) : 0
+      } else {
+        sbUpdate.lastFrameImage = localPath
+      }
+    } else sbUpdate.composedImage = localPath
     db.update(schema.storyboards).set(sbUpdate).where(eq(schema.storyboards.id, record.storyboardId)).run()
   }
   if (record?.characterId) {
