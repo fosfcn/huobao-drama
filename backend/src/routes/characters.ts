@@ -13,7 +13,7 @@ app.put('/:id', async (c) => {
   const id = Number(c.req.param('id'))
   const body = await c.req.json()
   const updates: Record<string, any> = { updatedAt: now() }
-  for (const key of ['name', 'role', 'description', 'appearance', 'personality', 'voiceStyle', 'voiceProvider', 'imageUrl', 'localPath']) {
+  for (const key of ['name', 'role', 'description', 'appearance', 'personality', 'voiceStyle', 'voiceProvider', 'voiceSpeed', 'imageUrl', 'localPath']) {
     const snakeKey = key.replace(/[A-Z]/g, m => '_' + m.toLowerCase())
     if (snakeKey in body) updates[key] = body[snakeKey]
     else if (key in body) updates[key] = body[key]
@@ -44,9 +44,10 @@ app.post('/:id/generate-voice-sample', async (c) => {
   const [ep] = db.select().from(schema.episodes).where(eq(schema.episodes.id, Number(body.episode_id))).all()
   if (!ep) return badRequest(c, 'Episode not found')
 
+  const speed = body.speed ?? char.voiceSpeed ?? 1.0
   try {
-    logTaskStart('VoiceSample', 'generate', { characterId: id, characterName: char.name, episodeId: ep.id, voice: char.voiceStyle })
-    const audioPath = await generateVoiceSample(char.name, char.voiceStyle, ep.audioConfigId ?? undefined)
+    logTaskStart('VoiceSample', 'generate', { characterId: id, characterName: char.name, episodeId: ep.id, voice: char.voiceStyle, speed })
+    const audioPath = await generateVoiceSample(char.name, char.voiceStyle, ep.audioConfigId ?? undefined, speed)
     db.update(schema.characters)
       .set({ voiceSampleUrl: audioPath, updatedAt: now() })
       .where(eq(schema.characters.id, id)).run()

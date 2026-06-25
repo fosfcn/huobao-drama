@@ -42,6 +42,13 @@ try {
     buildHash = readFileSync(hashFile, 'utf-8').trim().slice(0, 7)
   }
 } catch {}
+// Fallback: try environment variable
+if (buildHash === 'dev' || buildHash === 'unknown' || !buildHash) {
+  const envHash = process.env.BUILD_HASH
+  if (envHash && envHash !== 'unknown') {
+    buildHash = envHash.trim().slice(0, 7)
+  }
+}
 
 const app = new Hono()
 

@@ -126,7 +126,7 @@ export async function generateTTS(params: TTSParams): Promise<string> {
 /**
  * 为角色生成试听音频
  */
-export async function generateVoiceSample(characterName: string, voiceId: string, configId?: number | null): Promise<string> {
+export async function generateVoiceSample(characterName: string, voiceId: string, configId?: number | null, speed?: number): Promise<string> {
   const sampleText = `你好，我是${characterName}。很高兴认识你，这是我的声音试听。`
-  return generateTTS({ text: sampleText, voice: voiceId, configId })
+  return generateTTS({ text: sampleText, voice: voiceId, configId, speed })
 }

@@ -57,6 +57,7 @@ export const characters = sqliteTable('characters', {
   localPath: text('local_path'),
   voiceSampleUrl: text('voice_sample_url'),
   voiceProvider: text('voice_provider'),
+  voiceSpeed: real('voice_speed').default(1.0),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
   deletedAt: text('deleted_at'),

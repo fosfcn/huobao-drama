@@ -374,6 +374,22 @@
                   />
                 </div>
 
+                <div class="voice-select-block">
+                  <span class="voice-block-label">语速调整</span>
+                  <div class="speed-control">
+                    <input
+                      type="range"
+                      min="0.5"
+                      max="2.0"
+                      step="0.1"
+                      :value="c.voice_speed || c.voiceSpeed || 1.0"
+                      @change="updateCharSpeed(c.id, $event.target.value)"
+                      style="flex:1"
+                    />
+                    <span class="speed-value">{{ c.voice_speed || c.voiceSpeed || 1.0 }}x</span>
+                  </div>
+                </div>
+
                 <div v-if="getVoiceProfile(c.voice_style || c.voiceStyle)" class="voice-profile-card">
                   <div class="voice-profile-head">
                     <span class="voice-profile-name">{{ getVoiceProfile(c.voice_style || c.voiceStyle)?.label }}</span>
@@ -1473,12 +1489,22 @@ const prodTabIdx = computed({
 })
 const frameMode = ref('first')
 const fallbackVoiceProfiles = [
-  { id: 'alloy', label: 'Alloy', gender: '中性', traits: '平衡、自然、克制', suitable: '通用叙述、旁白、需要稳定输出的角色' },
-  { id: 'echo', label: 'Echo', gender: '男声', traits: '低沉、稳重、冷静', suitable: '成熟男性、父辈、旁白、压迫感角色' },
-  { id: 'fable', label: 'Fable', gender: '男声', traits: '温暖、讲述感、表现力强', suitable: '男主、成长型角色、叙事担当' },
-  { id: 'onyx', label: 'Onyx', gender: '男声', traits: '深沉、有力、权威', suitable: '反派、强势角色、掌控型人物' },
-  { id: 'nova', label: 'Nova', gender: '女声', traits: '温柔、甜润、亲和', suitable: '女主、母亲、柔和配角' },
-  { id: 'shimmer', label: 'Shimmer', gender: '女声', traits: '明亮、活泼、年轻', suitable: '少女、轻快角色、跳脱配角' },
+  { id: 'zh-CN-XiaoxiaoNeural', label: '晓晓', gender: '女声', traits: '标准女声、自然清晰', suitable: '通用叙述、旁白、新闻播报' },
+  { id: 'zh-CN-XiaoyiNeural', label: '晓伊', gender: '女声', traits: '温柔、甜美、亲和', suitable: '女主、年轻女性、亲切角色' },
+  { id: 'zh-CN-YunxiNeural', label: '云希', gender: '男声', traits: '年轻、阳光、自然', suitable: '男主、少年、阳光角色' },
+  { id: 'zh-CN-YunyangNeural', label: '云扬', gender: '男声', traits: '稳重、磁性、专业', suitable: '成熟男性、新闻播报、专业角色' },
+  { id: 'zh-CN-XiaobeiNeural', label: '晓北', gender: '女声', traits: '东北方言、活泼、接地气', suitable: '喜剧角色、接地气人物' },
+  { id: 'zh-CN-XiaoniNeural', label: '晓妮', gender: '女声', traits: '陕西方言、淳朴、亲切', suitable: '乡土角色、朴实人物' },
+  { id: 'zh-CN-YunxuanNeural', label: '云轩', gender: '男声', traits: '磁性、深沉、成熟', suitable: '中年男性、权威角色、领导者' },
+  { id: 'zh-CN-XiaomengNeural', label: '晓梦', gender: '女声', traits: '温柔、梦幻、轻柔', suitable: '少女、温柔角色、情感戏' },
+  { id: 'zh-CN-XiaoyanNeural', label: '晓颜', gender: '女声', traits: '自然、清新、日常', suitable: '日常对话、邻家女孩' },
+  { id: 'zh-CN-XiaochenNeural', label: '晓晨', gender: '男声', traits: '自然、阳光、温暖', suitable: '日常对话、暖男角色' },
+  { id: 'zh-CN-XiaojieNeural', label: '晓洁', gender: '女声', traits: '甜美、可爱、活泼', suitable: '萝莉、可爱角色、活泼少女' },
+  { id: 'zh-CN-XiaoyuNeural', label: '晓雨', gender: '女声', traits: '活泼、俏皮、轻快', suitable: '活泼女孩、调皮角色' },
+  { id: 'zh-CN-XiaoshuangNeural', label: '晓双', gender: '女声', traits: '幽默、风趣、搞笑', suitable: '喜剧角色、搞笑担当' },
+  { id: 'en-US-JennyNeural', label: 'Jenny(英)', gender: '女声', traits: '英文女声、标准美音', suitable: '英文内容、外语角色' },
+  { id: 'en-US-GuyNeural', label: 'Guy(英)', gender: '男声', traits: '英文男声、标准美音', suitable: '英文内容、外语角色' },
+  { id: 'en-GB-SoniaNeural', label: 'Sonia(英)', gender: '女声', traits: '英文女声、英式口音', suitable: '英文内容、英式角色' },
 ]
 const voiceProfiles = ref(fallbackVoiceProfiles)
 const voiceSelectOptions = computed(() => voiceProfiles.value.map(v => ({ label: `${v.label} · ${v.traits}`, value: v.id })))
@@ -2326,6 +2352,15 @@ function updateCharVoice(charId, voiceId) {
     c.voiceProvider = lockedAudioProvider.value || ''
     c.voice_sample_url = ''
     c.voiceSampleUrl = ''
+  }
+}
+function updateCharSpeed(charId, speed) {
+  const speedValue = parseFloat(speed)
+  characterAPI.update(charId, { voice_speed: speedValue })
+  const c = chars.value.find(ch => ch.id === charId)
+  if (c) {
+    c.voice_speed = speedValue
+    c.voiceSpeed = speedValue
   }
 }
 function getVoiceProfile(voiceId) {
