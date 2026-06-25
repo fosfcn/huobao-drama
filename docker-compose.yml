@@ -10,6 +10,7 @@ services:
     volumes:
       - ./data:/app/data
       - ./configs/config.yaml:/app/configs/config.yaml
+      - ./BUILD_HASH:/app/BUILD_HASH:ro
     environment:
       - NODE_ENV=production
       - PORT=5679
