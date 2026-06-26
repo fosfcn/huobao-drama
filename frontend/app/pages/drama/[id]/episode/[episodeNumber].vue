@@ -802,6 +802,28 @@
                       <span v-else class="dim" style="font-style:italic;opacity:0.5">点击添加外貌描述...</span>
                     </div>
                   </div>
+                  <div class="char-ref-image">
+                    <div v-if="c.reference_images || c.referenceImages" class="char-ref-image-preview">
+                      <img
+                        :src="c.reference_images || c.referenceImages"
+                        class="char-ref-image-thumb"
+                        @click.stop="openImageViewer(c.reference_images || c.referenceImages, `${c.name} 参考图`)"
+                      />
+                      <button class="btn btn-ghost btn-icon char-ref-image-clear" @click.stop="clearCharRefImage(c)" title="清除参考图">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                      </button>
+                    </div>
+                    <label v-else class="char-ref-image-upload">
+                      <input
+                        type="file"
+                        accept="image/*"
+                        style="display:none"
+                        @change="e => uploadCharRefImage(c, e)"
+                      />
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                      <span>参考图</span>
+                    </label>
+                  </div>
                 </div>
                 <div class="asset-foot">
                   <span :class="['dot', (c.image_url || c.imageUrl) && 'ok', isPendingCharImage(c.id) && 'pending']" />
@@ -2645,6 +2667,33 @@ function watchAsyncResult(check, attempts = 24, delay = 2500) {
   })()
 }
 
+async function uploadCharRefImage(char, event) {
+  const file = event.target.files?.[0]
+  if (!file) return
+  try {
+    const reader = new FileReader()
+    reader.onload = async () => {
+      const dataUrl = reader.result
+      await characterAPI.update(char.id, { reference_images: dataUrl })
+      char.reference_images = dataUrl
+      toast.success('参考图已上传')
+    }
+    reader.readAsDataURL(file)
+  } catch (e) {
+    toast.error(e.message)
+  } finally {
+    event.target.value = ''
+  }
+}
+async function clearCharRefImage(char) {
+  try {
+    await characterAPI.update(char.id, { reference_images: null })
+    char.reference_images = null
+    toast.success('参考图已清除')
+  } catch (e) {
+    toast.error(e.message)
+  }
+}
 async function genCharImg(id) {
   try {
     if (!isPendingCharImage(id)) pendingCharImageIds.value.push(id)
@@ -4622,6 +4671,64 @@ onMounted(() => { refresh(); loadConfigs(); loadVoices() })
 }
 
 .char-appearance { margin-top: 6px; }
+.char-ref-image { margin-top: 6px; }
+.char-ref-image-label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 4px;
+}
+.char-ref-image-preview {
+  position: relative;
+  width: 100%;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid rgba(27, 41, 64, 0.08);
+  cursor: zoom-in;
+}
+.char-ref-image-thumb {
+  width: 100%;
+  height: 80px;
+  object-fit: cover;
+  display: block;
+}
+.char-ref-image-clear {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: rgba(0,0,0,0.5);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  cursor: pointer;
+  z-index: 2;
+}
+.char-ref-image-clear:hover { background: rgba(0,0,0,0.7); }
+.char-ref-image-upload {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  height: 40px;
+  border: 1px dashed rgba(27, 41, 64, 0.15);
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 11px;
+  color: var(--muted);
+  transition: all 0.2s;
+}
+.char-ref-image-upload:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+  background: rgba(59,130,246,0.04);
+}
 .char-appearance-text {
   font-size: 11px;
   line-height: 1.4;

@@ -27,6 +27,16 @@ export class OpenAIImageAdapter implements ImageProviderAdapter {
       n: 1,
     }
 
+    // 支持参考图（Agnes AI 等扩展兼容）
+    if (record.referenceImages) {
+      try {
+        const refs = JSON.parse(record.referenceImages)
+        if (Array.isArray(refs) && refs.length > 0) {
+          body.image = refs[0]
+        }
+      } catch {}
+    }
+
     return {
       url: joinProviderUrl(config.baseUrl, '/v1', '/images/generations'),
       method: 'POST',
