@@ -10,6 +10,29 @@ import { logTaskError, logTaskPayload, logTaskProgress, logTaskStart, logTaskSuc
 // Public URL base for converting local paths to HTTP URLs (needed for Agnes Video API)
 const STORAGE_BASE_URL = process.env.STORAGE_BASE_URL || 'https://aidj.hc-mart.com/static'
 
+/**
+ * Enrich video prompt with Chinese dialogue instruction for Agnes Video V2.0.
+ * Extracts dialogue from the storyboard and appends a strong audio requirement
+ * so the video model generates Chinese speech instead of English.
+ */
+function enrichVideoPrompt(prompt: string, dialogue?: string | null): string {
+  if (!dialogue) return prompt
+
+  // Extract pure dialogue text (strip speaker prefix like "小美：")
+  const pureDialogue = dialogue
+    .replace(/^.+?[:：]\s*/, '')
+    .replace(/[（(].+?[)）]/g, '')
+    .trim()
+
+  if (!pureDialogue) return prompt
+
+  const audioInstruction = `
+
+[Audio Requirement - MUST FOLLOW] The characters in this video MUST speak Chinese (Mandarin). Character dialogue: "${pureDialogue}". All spoken dialogue must be in Chinese language. The video must contain Chinese speech audio, NOT English.`
+
+  return prompt + audioInstruction
+}
+
 interface GenerateVideoParams {
   storyboardId?: number
   dramaId?: number
@@ -94,11 +117,17 @@ async function processVideoGeneration(id: number, config: AIConfig) {
     const resolvedLastFrameUrl = await normalizeVideoReferenceUrl(record.lastFrameUrl)
     const resolvedReferenceImageUrls = await normalizeVideoReferenceUrls(record.referenceImageUrls)
 
+    // Enrich prompt with Chinese dialogue for Agnes Video
+    const storyboard = record.storyboardId
+      ? db.select().from(schema.storyboards).where(eq(schema.storyboards.id, record.storyboardId)).all()[0]
+      : null
+    const enrichedPrompt = enrichVideoPrompt(record.prompt, storyboard?.dialogue)
+
     // 使用 Adapter 构建请求
     const { url, method, headers, body } = adapter.buildGenerateRequest(config, {
       id: record.id,
       model: record.model,
-      prompt: record.prompt,
+      prompt: enrichedPrompt,
       referenceMode: record.referenceMode,
       imageUrl: resolvedImageUrl,
       firstFrameUrl: resolvedFirstFrameUrl,
