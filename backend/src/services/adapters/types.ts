@@ -96,6 +96,8 @@ export interface VideoGenerationRecord {
   referenceImageUrls?: string | null
   duration?: number | null
   aspectRatio?: string | null
+  width?: number | null
+  height?: number | null
   // ... 其他字段
 }
 

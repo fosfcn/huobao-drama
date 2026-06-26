@@ -1316,10 +1316,15 @@
                     </div>
                   </template>
                   <template v-else-if="!hasVid(sb)">
-                    <button class="btn btn-sm" @click="genVid(sb)">
-                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
-                      生成视频
-                    </button>
+                    <div class="flex gap-1 items-center flex-wrap">
+                      <button class="btn btn-sm" @click="genVid(sb)">
+                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
+                        生成视频
+                      </button>
+                      <select v-model="videoResolution" class="select-xs" title="视频分辨率">
+                        <option v-for="opt in VIDEO_RESOLUTION_OPTIONS" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
+                      </select>
+                    </div>
                   </template>
                   <template v-else>
                     <button class="btn btn-sm btn-danger" @click="deleteVideo(sb)">
@@ -1330,6 +1335,9 @@
                       <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
                       重新生成
                     </button>
+                    <select v-model="videoResolution" class="select-xs" title="视频分辨率">
+                      <option v-for="opt in VIDEO_RESOLUTION_OPTIONS" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
+                    </select>
                   </template>
                 </div>
               </div>
@@ -1603,6 +1611,15 @@ const charAppearanceDraft = ref({})
 const pendingSceneImageIds = ref([])
 const pendingShotFrameKeys = ref([])
 const pendingVideoIds = ref([])
+const videoResolution = ref('1152x768')  // Default 720p
+const VIDEO_RESOLUTION_OPTIONS = [
+  { label: '480p 省流量', value: '832x480', width: 832, height: 480 },
+  { label: '576p', value: '1024x576', width: 1024, height: 576 },
+  { label: '720p (默认)', value: '1152x768', width: 1152, height: 768 },
+  { label: '480p 竖屏', value: '480x832', width: 480, height: 832 },
+  { label: '720p 竖屏', value: '768x1152', width: 768, height: 1152 },
+  { label: '1:1 方形', value: '896x896', width: 896, height: 896 },
+]
 const pendingComposeIds = ref([])
 const failedVideoMessages = ref({})
 const failedComposeMessages = ref({})
@@ -4653,5 +4670,20 @@ onMounted(() => { refresh(); loadConfigs(); loadVoices() })
 @keyframes spin {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
+}
+
+.select-xs {
+  font-size: 11px;
+  padding: 2px 4px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  cursor: pointer;
+  max-width: 100px;
+}
+.select-xs:focus {
+  outline: none;
+  border-color: var(--accent);
 }
 </style>

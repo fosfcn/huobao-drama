@@ -17,6 +17,29 @@ import type {
 } from './types'
 import { joinProviderUrl } from './url'
 
+/** Default resolutions by aspect ratio */
+const RESOLUTION_MAP: Record<string, { width: number; height: number }> = {
+  '16:9': { width: 1152, height: 768 },
+  '9:16': { width: 768, height: 1152 },
+  '1:1':  { width: 896, height: 896 },
+  '4:3':  { width: 1024, height: 768 },
+  '3:4':  { width: 768, height: 1024 },
+}
+
+/** Preset resolutions for UI selection (Agnes Video V2.0 compatible) */
+export const VIDEO_RESOLUTION_PRESETS = [
+  { label: '576p', width: 1024, height: 576,  aspect: '16:9' },
+  { label: '720p', width: 1152, height: 768,  aspect: '16:9' },
+  { label: '720p 竖屏', width: 768, height: 1152, aspect: '9:16' },
+  { label: '480p', width: 832, height: 480,   aspect: '16:9' },
+  { label: '480p 竖屏', width: 480, height: 832,  aspect: '9:16' },
+  { label: '1:1', width: 896, height: 896,    aspect: '1:1' },
+]
+
+function getResolutionForAspect(aspectRatio: string): { width: number; height: number } {
+  return RESOLUTION_MAP[aspectRatio] || RESOLUTION_MAP['16:9']
+}
+
 export class AgnesVideoAdapter implements VideoProviderAdapter {
   provider = 'agnes'
 
@@ -29,13 +52,18 @@ export class AgnesVideoAdapter implements VideoProviderAdapter {
     let numFrames = Math.round((duration * frameRate - 1) / 8) * 8 + 1
     numFrames = Math.min(441, Math.max(41, numFrames))
 
+    // Resolution: use record values, or default based on aspect ratio
+    const defaultRes = getResolutionForAspect(record.aspectRatio || '16:9')
+    const width = record.width || defaultRes.width
+    const height = record.height || defaultRes.height
+
     const body: any = {
       model,
       prompt: record.prompt || '',
       num_frames: numFrames,
       frame_rate: frameRate,
-      width: 1152,
-      height: 768,
+      width,
+      height,
     }
 
     // Reference image modes
