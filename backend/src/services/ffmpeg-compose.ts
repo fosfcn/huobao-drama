@@ -141,7 +141,7 @@ export async function composeStoryboard(storyboardId: number): Promise<string> {
           .replace(/\\/g, '/')
           .replace(/:/g, '\\:')
           .replace(/'/g, "\\'")
-        const forceStyle = 'FontSize=20\\,PrimaryColour=&HFFFFFF&\\,OutlineColour=&H000000&\\,Outline=2'
+        const forceStyle = 'FontSize=20\,PrimaryColour=&HFFFFFF&\,OutlineColour=&H000000&\,Outline=2\,BackColour=&H00000000&\,BorderStyle=1'
         filters.push(`subtitles=filename='${escapedPath}':force_style='${forceStyle}'`)
       } else if (subtitlePath) {
         logTaskProgress('ComposeTask', 'subtitle-filter-unavailable', {
