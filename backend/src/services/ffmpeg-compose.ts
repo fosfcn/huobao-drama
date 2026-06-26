@@ -1,5 +1,5 @@
 /**
- * FFmpeg 单镜头合成 — 保留 Agnes 原声 + 语速变速 + 视频同步 + 烧录字幕
+ * FFmpeg 单镜头合成 — 视频 + TTS音频 + 烧录字幕
  */
 import ffmpeg from 'fluent-ffmpeg'
 import fs from 'fs'
@@ -10,6 +10,7 @@ import { v4 as uuid } from 'uuid'
 import { db, schema } from '../db/index.js'
 import { eq } from 'drizzle-orm'
 import { now } from '../utils/response.js'
+import { generateTTS } from './tts-generation.js'
 import { logTaskError, logTaskProgress, logTaskStart, logTaskSuccess } from '../utils/task-logger.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -47,55 +48,7 @@ function parseDialogueForTTS(dialogue?: string | null) {
 }
 
 /**
- * Get effective voice speed for a storyboard.
- * Priority: storyboard.ttsSpeed > character.voiceSpeed > 1.0
- */
-function getEffectiveVoiceSpeed(sb: typeof schema.storyboards.$inferSelect): number {
-  // 1. Storyboard-level speed takes priority
-  const sbSpeed = (sb as any).ttsSpeed
-  if (sbSpeed && sbSpeed !== 1.0) return sbSpeed
-
-  // 2. Character-level speed from voice assignment
-  if (sb.dialogue) {
-    const parsed = parseDialogueForTTS(sb.dialogue)
-    if (parsed.speaker) {
-      const [ep] = db.select().from(schema.episodes).where(eq(schema.episodes.id, sb.episodeId)).all()
-      if (ep) {
-        const chars = db.select().from(schema.characters)
-          .where(eq(schema.characters.dramaId, ep.dramaId)).all()
-        const found = chars.find(c => c.name === parsed.speaker)
-        if (found?.voiceSpeed && found.voiceSpeed !== 1.0) return found.voiceSpeed
-      }
-    }
-  }
-
-  return 1.0
-}
-
-/**
- * Build atempo filter chain for a given speed factor.
- * FFmpeg atempo range is [0.5, 100.0]; chain multiple for out-of-range values.
- */
-function buildAtempoFilter(speed: number): string {
-  if (speed <= 0) return 'atempo=1.0'
-  const filters: string[] = []
-  let remaining = speed
-  while (remaining < 0.5 || remaining > 100.0) {
-    const step = remaining > 100.0 ? 100.0 : 0.5
-    filters.push(`atempo=${step}`)
-    remaining /= step
-  }
-  filters.push(`atempo=${remaining}`)
-  return filters.join(',')
-}
-
-/**
- * 合成单个镜头：保留 Agnes 原声 + 语速变速 + 视频同步 + 烧录字幕
- *
- * 新逻辑：
- * - 保留视频原始中文音频（Agnes Video V2.0 生成）
- * - 根据 voiceSpeed 对音视频同步变速（atempo + setpts）
- * - 只烧录字幕，不用 TTS 替换音频
+ * 合成单个镜头：视频 + TTS对白音频 + 烧录字幕
  */
 export async function composeStoryboard(storyboardId: number): Promise<string> {
   const [sb] = db.select().from(schema.storyboards).where(eq(schema.storyboards.id, storyboardId)).all()
@@ -113,24 +66,54 @@ export async function composeStoryboard(storyboardId: number): Promise<string> {
   })
 
   const videoPath = toAbsPath(sb.videoUrl)
+  let audioPath: string | null = null
   let subtitlePath: string | null = null
   const parsedDialogue = parseDialogueForTTS(sb.dialogue)
-  const voiceSpeed = getEffectiveVoiceSpeed(sb)
 
+  // 1. 生成 TTS 音频（如果有对白）
   try {
-    // 1. 生成字幕文件（SRT）
+    if (!parsedDialogue.ignorable) {
+      if (sb.ttsAudioUrl) {
+        const existingAudioPath = toAbsPath(sb.ttsAudioUrl)
+        if (fs.existsSync(existingAudioPath)) {
+          audioPath = existingAudioPath
+        }
+      }
+
+      if (!audioPath) {
+        let voiceId = 'alloy'
+        const [ep] = db.select().from(schema.episodes).where(eq(schema.episodes.id, sb.episodeId)).all()
+        if (parsedDialogue.speaker) {
+          const charName = parsedDialogue.speaker
+          if (ep) {
+            const chars = db.select().from(schema.characters)
+              .where(eq(schema.characters.dramaId, ep.dramaId)).all()
+            const found = chars.find(c => c.name === charName)
+            if (found?.voiceStyle) voiceId = found.voiceStyle
+          }
+        }
+
+        const pureDialogue = parsedDialogue.pureText
+        if (pureDialogue) {
+          logTaskProgress('ComposeTask', 'generate-inline-tts', { storyboardId, voiceId, textPreview: pureDialogue.slice(0, 40) })
+          const ttsPath = await generateTTS({ text: pureDialogue, voice: voiceId, configId: ep?.audioConfigId ?? undefined, speed: sb.ttsSpeed ?? 1.0 })
+          audioPath = toAbsPath(ttsPath)
+          db.update(schema.storyboards).set({ ttsAudioUrl: ttsPath, updatedAt: now() })
+            .where(eq(schema.storyboards.id, storyboardId)).run()
+        }
+      }
+    }
+
+    // 2. 生成字幕文件（SRT）
     if (!parsedDialogue.ignorable) {
       const srtDir = path.join(STORAGE_ROOT, 'subtitles')
       fs.mkdirSync(srtDir, { recursive: true })
       const srtFilename = `${uuid()}.srt`
       subtitlePath = path.join(srtDir, srtFilename)
 
-      // Adjust subtitle timing based on voice speed
-      const rawDuration = sb.duration || 10
-      const adjustedDuration = voiceSpeed !== 1.0 ? Math.round(rawDuration / voiceSpeed) : rawDuration
-      const endSeconds = Math.min(adjustedDuration - 1, 59)
+      const duration = sb.duration || 10
       const pureText = parsedDialogue.pureText
-      const srtContent = `1\n00:00:00,500 --> 00:00:${String(endSeconds).padStart(2, '0')},000\n${pureText}\n`
+      const srtContent = `1\n00:00:00,500 --> 00:00:${String(Math.min(duration - 1, 59)).padStart(2, '0')},000\n${pureText}\n`
       fs.writeFileSync(subtitlePath, srtContent, 'utf-8')
 
       const srtRelative = `static/subtitles/${srtFilename}`
@@ -138,31 +121,28 @@ export async function composeStoryboard(storyboardId: number): Promise<string> {
         .where(eq(schema.storyboards.id, storyboardId)).run()
     }
 
-    // 2. FFmpeg 合成 — 保留原声 + 语速变速 + 字幕烧录
+    // 3. FFmpeg 合成
     const outputDir = path.join(STORAGE_ROOT, 'composed')
     fs.mkdirSync(outputDir, { recursive: true })
     const outputFilename = `${uuid()}.mp4`
     const outputPath = path.join(outputDir, outputFilename)
 
     await new Promise<void>((resolve, reject) => {
-      // Build filter chains for video and audio
-      const videoFilters: string[] = []
-      const audioFilters: string[] = []
+      let cmd = ffmpeg(videoPath)
 
-      // Video speed: setpts=PTS/speed (faster speed = shorter video)
-      if (voiceSpeed !== 1.0) {
-        videoFilters.push(`setpts=PTS/${voiceSpeed}`)
-        audioFilters.push(buildAtempoFilter(voiceSpeed))
+      if (audioPath) {
+        cmd = cmd.input(audioPath)
       }
 
-      // Subtitle burn-in (applied after speed change so timing stays in sync)
+      const filters: string[] = []
+
       if (subtitlePath && supportsSubtitleFilter()) {
         const escapedPath = subtitlePath
           .replace(/\\/g, '/')
           .replace(/:/g, '\\:')
           .replace(/'/g, "\\'")
         const forceStyle = 'FontSize=20\\,PrimaryColour=&HFFFFFF&\\,OutlineColour=&H000000&\\,Outline=2'
-        videoFilters.push(`subtitles=filename='${escapedPath}':force_style='${forceStyle}'`)
+        filters.push(`subtitles=filename='${escapedPath}':force_style='${forceStyle}'`)
       } else if (subtitlePath) {
         logTaskProgress('ComposeTask', 'subtitle-filter-unavailable', {
           storyboardId,
@@ -170,52 +150,23 @@ export async function composeStoryboard(storyboardId: number): Promise<string> {
         })
       }
 
-      const hasVideoFilter = videoFilters.length > 0
-      const hasAudioFilter = audioFilters.length > 0
-
-      if (hasVideoFilter || hasAudioFilter) {
-        // Use filter_complex for synchronized audio+video processing
-        const filterParts: string[] = []
-
-        if (hasVideoFilter) {
-          filterParts.push(`[0:v]${videoFilters.join(',')}[v]`)
-        }
-        if (hasAudioFilter) {
-          filterParts.push(`[0:a]${audioFilters.join(',')}[a]`)
-        }
-
-        const filterComplex = filterParts.join(';')
-
-        const outputOptions = ['-c:v', 'libx264', '-preset', 'fast', '-crf', '23']
-
-        // Map the filtered streams
-        if (hasVideoFilter) {
-          outputOptions.push('-map', '[v]')
-        }
-        if (hasAudioFilter) {
-          outputOptions.push('-map', '[a]')
-          outputOptions.push('-c:a', 'aac', '-b:a', '192k')
-        } else {
-          // No audio filter but video was filtered — keep original audio stream
-          outputOptions.push('-map', '0:a', '-c:a', 'aac', '-b:a', '192k')
-        }
-
-        ffmpeg(videoPath)
-          .complexFilter(filterComplex)
-          .outputOptions(outputOptions)
-          .output(outputPath)
-          .on('end', () => resolve())
-          .on('error', (err) => reject(err))
-          .run()
-      } else {
-        // No filters — simple re-encode preserving original audio
-        ffmpeg(videoPath)
-          .outputOptions(['-c:v', 'libx264', '-preset', 'fast', '-crf', '23', '-c:a', 'aac', '-b:a', '192k'])
-          .output(outputPath)
-          .on('end', () => resolve())
-          .on('error', (err) => reject(err))
-          .run()
+      if (filters.length > 0) {
+        cmd = cmd.videoFilter(filters)
       }
+
+      const outputOptions = ['-c:v', 'libx264', '-preset', 'fast', '-crf', '23']
+
+      if (audioPath) {
+        outputOptions.push('-map', '0:v', '-map', '1:a', '-c:a', 'aac', '-shortest')
+      } else {
+        outputOptions.push('-an')
+      }
+
+      cmd.outputOptions(outputOptions)
+        .output(outputPath)
+        .on('end', () => resolve())
+        .on('error', (err) => reject(err))
+        .run()
     })
 
     const composedRelative = `static/composed/${outputFilename}`
@@ -225,7 +176,6 @@ export async function composeStoryboard(storyboardId: number): Promise<string> {
     logTaskSuccess('ComposeTask', 'storyboard-compose', {
       storyboardId,
       storyboardNumber: sb.storyboardNumber,
-      voiceSpeed,
       output: composedRelative,
     })
     return composedRelative
