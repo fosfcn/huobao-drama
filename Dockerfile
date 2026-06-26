@@ -19,7 +19,7 @@ RUN npm ci --omit=dev
 # Stage 3: Production image
 FROM node:20-slim
 
-RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg && rm -rf /var/lib/apt/lists/* && npm i -g tsx
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg fonts-noto-cjk && rm -rf /var/lib/apt/lists/* && npm i -g tsx
 
 WORKDIR /app
 
